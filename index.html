@@ -209,8 +209,8 @@ a.lnk:hover { text-decoration: underline; }
       <input type="search" id="q" placeholder="Search name, ID, type, info, tag…">
       <button id="reset">Clear filters</button>
     </span>
-    <button id="loadBtn" class="primary" title="Replace the current data with a new set of files">Load new files</button>
-    <button id="folderBtn" title="Replace the current data with every .csv / .xlsx inside a folder (and its subfolders)">Load folder</button>
+    <button id="loadBtn" class="primary" title="New exports replace the current exports; a new loadout replaces the current loadout">Load new files</button>
+    <button id="folderBtn" title="Load every .csv / .xlsx inside a folder (and its subfolders); new exports replace the current exports">Load folder</button>
     <button id="addBtn" class="needs-data" title="Add files to the current upload without discarding it">＋ Add to current</button>
     <span id="acct" class="acct"></span>
     <button id="theme" title="Toggle light/dark">◐</button>
@@ -222,12 +222,13 @@ a.lnk:hover { text-decoration: underline; }
     <div class="drop" id="drop">
       <div class="big">Drop inventory exports or a whole folder here</div>
       <div class="sub">Ships, Vehicles, NPCs, Droids, Items and Facilities exports (.csv) — any number, any mix — plus
-        <b>Equipment loadout.xlsx</b> if it has changed (a built-in copy is used otherwise)</div>
+        <b>Equipment loadout.xlsx</b>, together or separately</div>
     </div>
     <div id="busy"></div>
-    <p class="note">Files are read locally in your browser and never uploaded anywhere. Each upload replaces the previous data.
-      Records are linked by uid: every item, NPC, droid, vehicle and ship knows what it is inside, all the way up to the top-level ship,
-      city or system. Within an upload, the same uid in several files is de-duplicated (the most recently modified file wins).</p>
+    <p class="note">Files are read in your browser. If you're signed in, they are also saved to your account so your other devices get them;
+      otherwise they stay in this browser only. New exports replace the previous exports, and a new loadout replaces the previous loadout — loading
+      one never removes the other. Records are linked by uid: every item, NPC, droid, vehicle and ship knows what it is inside, all the way up to
+      the top-level ship, city or system. The same uid in several files is de-duplicated (the most recently modified file wins).</p>
   </div>
 
   <div id="app" hidden>
@@ -574,9 +575,15 @@ async function addFiles(list, replace = true) {
   const busy = document.getElementById("busy");
   if (!files.length) { busy.textContent = "No .csv or .xlsx files found in what was dropped."; return; }
   if (replace) {
-    sources = []; Object.values(TS).forEach(t => { t.filters.clear(); t.query = ""; t.page = 0; t.inside = null; });
-    document.getElementById("q").value = ""; closeDrawer();
-    await DB.clear();
+    // new exports replace the exports, a new loadout replaces the loadout — loading one never throws away the other
+    const kinds = new Set(files.map(f => /\.xlsx$/i.test(f.name) ? "xlsx" : "csv"));
+    const gone = sources.filter(s => kinds.has(s.kind));
+    sources = sources.filter(s => !kinds.has(s.kind));
+    for (const s of gone) await DB.del(s.key);
+    if (kinds.has("csv")) {
+      Object.values(TS).forEach(t => { t.filters.clear(); t.query = ""; t.page = 0; t.inside = null; });
+      document.getElementById("q").value = ""; closeDrawer();
+    }
   }
   let skipped = 0;
   for (const f of files) {
@@ -1094,6 +1101,7 @@ function rebuild() {
   buildTabs();
   const has = M.ents.length > 0;
   document.getElementById("empty").hidden = has;
+  if (!has && L) document.getElementById("busy").innerHTML = `<span class="ok">✓ ${esc(L.name)} loaded</span> — now load the inventory exports (or their folder).`;
   document.getElementById("app").hidden = !has;
   document.querySelectorAll(".needs-data").forEach(el => el.style.display = has ? "" : "none");
   const per = ET_LIST.filter(et => T[et].R.length).map(et => `${fmt(T[et].R.length)} ${et.toLowerCase()}`);
@@ -1110,7 +1118,8 @@ function renderSources() {
   const date = t => new Date(t).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const newest = {};
   csvs.forEach(s => s.et.split(", ").forEach(et => newest[et] = Math.max(newest[et] || 0, s.mtime)));
-  let h = `<p class="note">Loading new files replaces everything (use <b>＋ Add to current</b> to include one you forgot). The same uid in several files is
+  let h = `<p class="note">New exports replace the current exports and a new loadout replaces the current loadout (use <b>＋ Add to current</b> to include
+    an export you forgot). The same uid in several files is
     de-duplicated — the <b>most recently modified</b> file wins. A file that is much older than the newest export of the same kind may hold records that no
     longer exist (sold, destroyed, moved out of the faction): its "kept" count shows how many records come only from it.</p>
     <div class="tablewrap"><table class="data"><tr><th>File</th><th>Kind</th><th>Modified</th><th class="num">Rows</th><th class="num">Kept</th><th class="num">Superseded by newer</th><th>Status</th><th></th></tr>`;
