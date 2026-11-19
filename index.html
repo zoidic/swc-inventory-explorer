@@ -1,0 +1,1957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emerald TF · Inventory Explorer</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb; --surface-2: #f3f2ee;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6; --bar-dim: #c9d9ee; --bar-ghost: #eeede8; --accent-wash: rgba(42,120,214,0.10);
+  --seq-0: #cde2fb; --seq-1: #9ec5f4; --seq-2: #6da7ec; --seq-3: #3987e5; --seq-4: #256abf; --seq-5: #184f95; --seq-6: #0d366b;
+  --good: #006300; --critical: #d03b3b; --short-wash: rgba(208,59,59,0.16); --ok-wash: rgba(0,99,0,0.12);
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface-1: #1a1a19; --surface-2: #222220;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --bar-dim: #2a3d57; --bar-ghost: #262624; --accent-wash: rgba(57,135,229,0.16);
+  --seq-0: #104281; --seq-1: #184f95; --seq-2: #1c5cab; --seq-3: #2a78d6; --seq-4: #5598e7; --seq-5: #86b6ef; --seq-6: #cde2fb;
+  --good: #0ca30c; --critical: #e66767; --short-wash: rgba(230,103,103,0.22); --ok-wash: rgba(12,163,12,0.18);
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.viz-root { background: var(--page); color: var(--text-primary); min-height: 100vh;
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 16px 20px 40px; }
+h1 { font-size: 18px; margin: 0; font-weight: 600; }
+.sub { color: var(--text-muted); font-size: 12px; }
+header { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 12px; }
+header .grow { flex: 1; }
+header span.needs-data { display: inline-flex; gap: 10px; flex-wrap: wrap; }
+input[type=search], input[type=number], input[type=text], select, button { font: inherit; color: var(--text-primary); background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
+input[type=search] { width: 260px; }
+button { cursor: pointer; }
+button:hover { background: var(--surface-2); }
+button.primary { background: var(--series-1); color: #fff; border-color: transparent; }
+button.primary:hover { filter: brightness(1.1); background: var(--series-1); }
+label.ck { display: inline-flex; gap: 5px; align-items: center; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+nav.tabs { display: flex; gap: 2px; flex-wrap: wrap; margin: 0 0 12px; border-bottom: 1px solid var(--border); }
+nav.tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--text-secondary); }
+nav.tabs button.on { color: var(--text-primary); border-bottom-color: var(--series-1); font-weight: 600; }
+nav.tabs button .c { color: var(--text-muted); font-size: 11px; margin-left: 4px; font-weight: 400; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; min-height: 26px; align-items: center; }
+.chip { background: var(--accent-wash); border: 1px solid var(--border); border-radius: 999px; padding: 2px 6px 2px 10px;
+  font-size: 12px; display: inline-flex; gap: 6px; align-items: center; max-width: 100%; }
+.chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip b { font-weight: 600; }
+.chip button { border: 0; background: none; padding: 0 4px; color: var(--text-secondary); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+.tile .k { color: var(--text-secondary); font-size: 12px; }
+.tile .v { font-size: 24px; font-weight: 600; margin-top: 2px; }
+.tile .d { color: var(--text-muted); font-size: 11px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.card h2 { font-size: 13px; font-weight: 600; margin: 0; }
+.card .hd { display: flex; align-items: baseline; gap: 4px 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.card .hd .sub { flex: 1; min-width: 120px; }
+.card .hd input { width: 110px; padding: 2px 6px; font-size: 12px; }
+.facet { max-height: 250px; overflow-y: auto; padding-right: 4px; }
+.row { display: grid; grid-template-columns: minmax(80px, 42%) 1fr 52px; align-items: center; gap: 8px;
+  padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.row:hover { background: var(--accent-wash); }
+.row .lab { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
+.row.sel .lab { color: var(--text-primary); font-weight: 600; }
+.row.zero .lab, .row.zero .n { color: var(--text-muted); opacity: .6; }
+.row .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.track { position: relative; height: 12px; }
+.track .ghost, .track .bar { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; }
+.track .ghost { background: var(--bar-ghost); }
+.track .bar { background: var(--series-1); }
+.dimmed .row:not(.sel) .bar { background: var(--bar-dim); }
+.cols { display: flex; align-items: flex-end; gap: 2px; height: 170px; padding-top: 16px; border-bottom: 1px solid var(--axis); }
+.col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+  cursor: pointer; position: relative; border-radius: 4px 4px 0 0; }
+.col:hover { background: var(--accent-wash); }
+.col .cg { position: absolute; bottom: 0; width: 70%; background: var(--bar-ghost); border-radius: 4px 4px 0 0; }
+.col .cb { position: relative; width: 70%; background: var(--series-1); border-radius: 4px 4px 0 0; }
+.col .cv { font-size: 10px; color: var(--text-secondary); font-variant-numeric: tabular-nums; position: relative; }
+.dimmed .col:not(.sel) .cb { background: var(--bar-dim); }
+.xl { display: flex; gap: 2px; margin-top: 3px; }
+.xl span { flex: 1; text-align: center; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.xl span.sel { color: var(--text-primary); font-weight: 600; }
+.heat { overflow-x: auto; }
+.heat table { border-collapse: separate; border-spacing: 2px; font-variant-numeric: tabular-nums; }
+.heat th { font-weight: 500; color: var(--text-muted); font-size: 11px; padding: 2px 6px; }
+.heat th.ch { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.heat th.rl { text-align: left; color: var(--text-secondary); max-width: 220px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; cursor: pointer; font-size: 12px; }
+.heat td { min-width: 44px; height: 24px; text-align: center; font-size: 11px; border-radius: 3px; cursor: pointer; padding: 0 4px; }
+.heat td.z { background: transparent; color: var(--text-muted); }
+.heat td.tot { color: var(--text-secondary); font-weight: 600; cursor: default; }
+.heat td:not(.z):not(.tot):hover { outline: 2px solid var(--text-primary); }
+.tbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.tbar .grow { flex: 1; }
+.tablewrap { overflow-x: auto; }
+.tablewrap.tall { max-height: 560px; overflow-y: auto; }
+table.data { border-collapse: collapse; width: 100%; font-size: 12px; }
+table.data th { text-align: left; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--axis);
+  padding: 6px 8px; white-space: nowrap; background: var(--surface-1); position: sticky; top: 0; z-index: 1; }
+table.data th[data-k] { cursor: pointer; }
+table.data th.num, table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.data td { padding: 4px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; max-width: 260px;
+  overflow: hidden; text-overflow: ellipsis; }
+table.data tr.click td { cursor: pointer; }
+table.data tr.click:hover td { background: var(--accent-wash); }
+table.data tr.selrow td { background: var(--accent-wash); }
+table.data tr.sect td { font-weight: 600; color: var(--text-secondary); background: var(--surface-2); }
+table.data td.short { color: var(--critical); font-weight: 600; }
+table.data td.over { color: var(--series-1); }
+table.data td.dim { color: var(--text-muted); }
+.pill { display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 11px; background: var(--surface-2);
+  color: var(--text-secondary); margin-right: 3px; }
+.ok { color: var(--good); font-weight: 600; }
+.bad { color: var(--critical); font-weight: 600; }
+.warn { color: var(--critical); }
+.x { border: 0; background: none; color: var(--text-muted); padding: 0 6px; }
+/* matrix */
+.mx { overflow: auto; max-height: 620px; }
+.mx table { border-collapse: separate; border-spacing: 2px; font-variant-numeric: tabular-nums; font-size: 11px; }
+.mx th { font-weight: 500; color: var(--text-muted); padding: 2px 4px; background: var(--surface-1); }
+.mx thead th { position: sticky; top: 0; z-index: 2; }
+.mx th.vert { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: 130px; text-align: left; cursor: pointer; }
+.mx th.vert:hover { color: var(--text-primary); }
+.mx th.rl { position: sticky; left: 0; z-index: 1; text-align: left; color: var(--text-secondary); white-space: nowrap; max-width: 230px;
+  overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.mx thead th.rl { z-index: 3; }
+.mx td { min-width: 50px; height: 22px; text-align: center; border-radius: 3px; cursor: pointer; padding: 0 3px; white-space: nowrap; }
+.mx td.e { cursor: default; color: var(--text-muted); }
+.mx td.s { background: var(--short-wash); color: var(--critical); font-weight: 600; }
+.mx td.k { background: var(--ok-wash); }
+.mx td.o { background: var(--accent-wash); color: var(--series-1); }
+.mx td.r { background: var(--surface-2); color: var(--text-secondary); }
+.mx td:not(.e):hover { outline: 2px solid var(--text-primary); }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--text-secondary); margin: 6px 0; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
+/* upload */
+#empty { max-width: 680px; margin: 60px auto; text-align: center; }
+.drop { border: 2px dashed var(--axis); border-radius: 14px; padding: 48px 24px; background: var(--surface-1); cursor: pointer; }
+.drop:hover, .drop.over { border-color: var(--series-1); background: var(--accent-wash); }
+.drop .big { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+#overlay { position: fixed; inset: 0; background: var(--accent-wash); border: 3px dashed var(--series-1); display: none;
+  align-items: center; justify-content: center; font-size: 20px; font-weight: 600; z-index: 40; pointer-events: none; }
+#overlay.on { display: flex; }
+#busy { color: var(--text-secondary); margin-top: 12px; min-height: 18px; }
+details.card > summary { cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::before { content: "▸"; color: var(--text-muted); }
+details.card[open] > summary::before { content: "▾"; }
+details.card[open] > summary { margin-bottom: 8px; }
+.note { color: var(--text-secondary); font-size: 12px; margin: 8px 0; }
+.stack > * + * { margin-top: 12px; }
+#tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  display: none; z-index: 50; max-width: 360px; }
+#tip .t { color: var(--text-secondary); }
+/* account + sync */
+.acct { display: inline-flex; gap: 8px; align-items: center; font-size: 12px; color: var(--text-secondary); }
+.acct .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); display: inline-block; }
+.acct .dot.ok { background: var(--good); } .acct .dot.busy { background: var(--series-1); } .acct .dot.err { background: var(--critical); }
+.acct a { color: var(--series-1); cursor: pointer; }
+dialog.login { border: 1px solid var(--border); border-radius: 12px; background: var(--surface-1); color: var(--text-primary); padding: 18px 20px; width: min(360px, 92vw); }
+dialog.login::backdrop { background: rgba(0,0,0,.45); }
+dialog.login h2 { font-size: 15px; margin: 0 0 4px; }
+dialog.login label { display: block; font-size: 12px; color: var(--text-secondary); margin: 10px 0 3px; }
+dialog.login input { width: 100%; font: inherit; color: var(--text-primary); background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; }
+dialog.login .btns { margin-top: 14px; justify-content: space-between; align-items: center; }
+dialog.login .err { color: var(--critical); font-size: 12px; min-height: 16px; margin-top: 8px; }
+input.cell { width: 72px; padding: 2px 6px; font-size: 12px; }
+input.map, select.map { width: 260px; padding: 2px 6px; font-size: 12px; }
+input.map.changed, select.map.changed, input.cell.changed { border-color: var(--series-1); }
+/* drawer */
+#drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(500px, 100vw); background: var(--surface-1);
+  border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgba(0,0,0,.18); overflow-y: auto; padding: 14px 16px 40px;
+  z-index: 30; transform: translateX(105%); transition: transform .15s ease; color: var(--text-primary); }
+#drawer.on { transform: none; }
+#drawer h2 { font-size: 16px; margin: 2px 0 6px; font-weight: 600; word-break: break-word; }
+#drawer h3 { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+#drawer .close { position: absolute; top: 10px; right: 10px; }
+.crumbs { font-size: 12px; color: var(--text-muted); line-height: 1.7; }
+a.lnk { color: var(--series-1); cursor: pointer; text-decoration: none; }
+a.lnk:hover { text-decoration: underline; }
+.kv { display: grid; grid-template-columns: 140px 1fr; gap: 3px 10px; font-size: 12px; }
+.kv .k { color: var(--text-muted); }
+.kv .v { word-break: break-word; }
+.tree .tg { display: grid; grid-template-columns: 14px 1fr auto; gap: 6px; padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.tree .tg:hover { background: var(--accent-wash); }
+.tree .tg .n { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.tree .tl { margin: 0 0 4px 20px; font-size: 12px; }
+.tree .tl div { display: flex; gap: 8px; padding: 1px 0; }
+.tree .tl div span:last-child { color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.btns button { font-size: 12px; padding: 4px 8px; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <header>
+    <div>
+      <h1>Emerald TF · Inventory Explorer</h1>
+      <div class="sub" id="meta">Load SWC inventory exports (.csv) for ships, vehicles, NPCs, droids, items and facilities, plus the Equipment loadout (.xlsx)</div>
+    </div>
+    <div class="grow"></div>
+    <span class="needs-data">
+      <input type="search" id="q" placeholder="Search name, ID, type, info, tag…">
+      <button id="reset">Clear filters</button>
+    </span>
+    <button id="loadBtn" class="primary" title="Replace the current data with a new set of files">Load new files</button>
+    <button id="folderBtn" title="Replace the current data with every .csv / .xlsx inside a folder (and its subfolders)">Load folder</button>
+    <button id="addBtn" class="needs-data" title="Add files to the current upload without discarding it">＋ Add to current</button>
+    <span id="acct" class="acct"></span>
+    <button id="theme" title="Toggle light/dark">◐</button>
+    <input type="file" id="file" accept=".csv,text/csv,.xlsx" multiple hidden>
+    <input type="file" id="folder" webkitdirectory multiple hidden>
+  </header>
+
+  <div id="empty">
+    <div class="drop" id="drop">
+      <div class="big">Drop inventory exports or a whole folder here</div>
+      <div class="sub">Ships, Vehicles, NPCs, Droids, Items and Facilities exports (.csv) — any number, any mix — plus
+        <b>Equipment loadout.xlsx</b> if it has changed (a built-in copy is used otherwise)</div>
+    </div>
+    <div id="busy"></div>
+    <p class="note">Files are read locally in your browser and never uploaded anywhere. Each upload replaces the previous data.
+      Records are linked by uid: every item, NPC, droid, vehicle and ship knows what it is inside, all the way up to the top-level ship,
+      city or system. Within an upload, the same uid in several files is de-duplicated (the most recently modified file wins).</p>
+  </div>
+
+  <div id="app" hidden>
+    <details class="card" id="sources" style="margin-bottom:12px">
+      <summary><h2>Data sources</h2><span class="sub" id="srcSummary"></span></summary>
+      <div id="srcBody"></div>
+    </details>
+    <nav class="tabs" id="tabs"></nav>
+
+    <section id="explorer">
+      <div class="chips" id="chips"></div>
+      <div class="tiles" id="tiles"></div>
+      <div class="grid" id="facets"></div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="hd"><h2>Pivot: <select id="pivR"></select> × <select id="pivC"></select></h2>
+          <span class="sub" id="pivSub">count per cell (log color scale) · click a cell to filter · click a row name to filter that row</span></div>
+        <div class="heat" id="heat"></div>
+      </div>
+      <div class="card">
+        <div class="tbar">
+          <h2 id="tcount"></h2><span class="sub">click a row for its full chain and contents · click a header to sort</span><div class="grow"></div>
+          <label class="ck" id="measureWrap"><span>Count</span><select id="measure"><option value="count">records</option><option value="units">units (cargo containers count their contents)</option></select></label>
+          <button id="copyIds">Copy IDs</button><button id="export">Export CSV</button>
+          <button id="prev">‹</button><span class="sub" id="page"></span><button id="next">›</button>
+        </div>
+        <div class="tablewrap"><table class="data" id="tbl"></table></div>
+      </div>
+    </section>
+
+    <section id="loadout" hidden class="stack">
+      <div class="card tbar" style="margin-bottom:0">
+        <h2>Scope</h2>
+        <label class="ck">Count by <select id="lCountBy">
+          <option value="assigned">assigned group (tags, labels, holder)</option>
+          <option value="physical">where it physically is (inside which flagship)</option></select></label>
+        <label class="ck"><input type="checkbox" id="lExBn"> exclude SC Battalions</label>
+        <label class="ck"><input type="checkbox" id="lOnlyOff"> only ships with an officer assigned</label>
+        <span class="sub" id="lScopeSub"></span>
+      </div>
+      <div class="tiles" id="lTiles"></div>
+      <div class="card">
+        <div class="tbar">
+          <h2>Requisition list</h2><span class="sub" id="lSub"></span><div class="grow"></div>
+          <select id="lCat"></select>
+          <input type="search" id="lQ" placeholder="filter lines…" style="width:160px">
+          <label class="ck"><input type="checkbox" id="lOnlyShort" checked> only lines with a shortfall</label>
+          <label class="ck" title="Untick to only cover shortfalls from the reserve and unassigned stock, never by taking another group's surplus"><input type="checkbox" id="lSurplus"> other groups' surplus can cover shortfalls</label>
+          <button id="lExport">Export CSV</button>
+        </div>
+        <div class="tablewrap tall"><table class="data" id="lTbl"></table></div>
+        <p class="note"><b>Required</b> = the loadout allocation for every group present, by its doctrine position, plus the full allocation of any
+          position the Task Force quantity says should exist but has no group yet. <b>Group shortfall</b> adds up each group's own gap
+          (a surplus in one group doesn't cancel another group's gap). Part of that can be <b>covered by moving stock</b> the TF already owns — the reserve,
+          unassigned stock and (unless unticked) other groups' surplus and stock in groups with no position. The rest is the
+          <b>net to requisition</b>: new stock the TF doesn't have anywhere. Click a line for the per-group breakdown.</p>
+      </div>
+      <div class="card" id="lBreak" hidden></div>
+      <div class="card">
+        <div class="tbar">
+          <h2>Holdings vs loadout matrix</h2><span class="sub">held / required · click a cell to open those records</span><div class="grow"></div>
+          <select id="mxBy"><option value="group">columns: each group</option><option value="pos">columns: doctrine position (summed)</option></select>
+        </div>
+        <div class="legend"><span><i style="background:var(--short-wash)"></i>short</span><span><i style="background:var(--ok-wash)"></i>meets allocation</span>
+          <span><i style="background:var(--accent-wash)"></i>over allocation</span><span><i style="background:var(--surface-2)"></i>held, no allocation for this position</span></div>
+        <div class="mx" id="mx"></div>
+      </div>
+      <details class="card" id="dPos">
+        <summary><h2>Positions &amp; Task Force quantities</h2><span class="sub" id="dPosSub"></span></summary><div id="posBody"></div>
+      </details>
+      <details class="card" id="dGroups">
+        <summary><h2>Groups → doctrine positions</h2><span class="sub" id="dGroupsSub"></span></summary><div id="groupBody"></div>
+      </details>
+      <details class="card" id="dTypes">
+        <summary><h2>Inventory types → loadout lines</h2><span class="sub" id="dTypesSub"></span></summary><div id="typeBody"></div>
+      </details>
+      <details class="card" id="dCargo">
+        <summary><h2>Cargo container contents</h2><span class="sub" id="dCargoSub"></span></summary><div id="cargoBody"></div>
+      </details>
+    </section>
+  </div>
+</div>
+<aside id="drawer" class="viz-root" style="min-height:0;padding:14px 16px 40px"></aside>
+<div id="overlay">Drop files or a folder to replace the current data</div>
+<div id="tip"></div>
+<dialog class="login viz-root" id="loginDlg" style="min-height:0">
+  <form method="dialog" id="loginForm">
+    <h2>Sign in to sync</h2>
+    <div class="sub">Your loaded files and mapping choices are stored in your account and appear on your other devices.</div>
+    <label for="lgEmail">Email</label><input id="lgEmail" type="email" autocomplete="username" required>
+    <label for="lgPw">Password</label><input id="lgPw" type="password" autocomplete="current-password" required minlength="6">
+    <div class="err" id="lgErr"></div>
+    <div class="btns">
+      <span><a class="lnk" id="lgReset">Forgot password</a> · <a class="lnk" id="lgNew">Create account</a></span>
+      <span><button type="button" id="lgCancel">Cancel</button> <button class="primary" id="lgGo" value="signin">Sign in</button></span>
+    </div>
+  </form>
+</dialog>
+<datalist id="dlRows"></datalist>
+<datalist id="dlVocab"></datalist>
+<script>
+// ======================= Equipment loadout =======================
+// No loadout is built into the page (it is public); drop Equipment loadout.xlsx with the exports — it is remembered and synced.
+const DEFAULT_LOADOUT = { name: "", grid: null };
+
+// ======================= small helpers =======================
+const fmt = n => Math.round(n).toLocaleString("en-US");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const blank = v => (v == null || v === "None") ? "" : String(v).trim();
+const compact = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+// Type names are spelled differently across the exports and the loadout sheet ("Storm Trooper Helmet" vs "Stormtrooper Helmet").
+const normType = s => {
+  const c = String(s).toLowerCase().replace(/armor\b/g, "armour").replace(/\b(class|series)\b/g, "").replace(/[^a-z0-9]/g, "");
+  return c.length > 4 ? c.replace(/s$/, "") : c;
+};
+const vocabKey = s => String(s).toLowerCase().replace(/armor\b/g, "armour").replace(/[^a-z0-9]/g, "");
+function osa(a, b) {   // edit distance with adjacent transpositions
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 3) return 9;
+  const d = Array.from({ length: m + 1 }, (_, i) => { const r = new Array(n + 1).fill(0); r[0] = i; return r; });
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+    const c = a[i - 1] === b[j - 1] ? 0 : 1;
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c);
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+  }
+  return d[m][n];
+}
+const plural = (n, w) => `${fmt(n)} ${w}${n === 1 ? "" : "s"}`;
+const reEsc = s => s.replace(/[.*+?^$()|[\]{}\\]/g, "\\$&");
+
+// ======================= CSV parsing =======================
+function parseCSV(text) {
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0, n = text.length; i < n; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; }
+      else f += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(f); f = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(f); f = ""; rows.push(row); row = [];
+    } else f += c;
+  }
+  if (f !== "" || row.length) { row.push(f); rows.push(row); }
+  return rows.filter(r => r.length > 1 || r[0] !== "");
+}
+
+// ======================= minimal .xlsx reader (zip + sheet XML, first sheet only) =======================
+async function readXlsx(buf) {
+  const u8 = new Uint8Array(buf), dv = new DataView(buf), td = new TextDecoder();
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error("not an .xlsx file");
+  const files = new Map();
+  let p = dv.getUint32(eocd + 16, true);
+  for (let k = dv.getUint16(eocd + 10, true); k > 0 && dv.getUint32(p, true) === 0x02014b50; k--) {
+    const nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true);
+    files.set(td.decode(u8.subarray(p + 46, p + 46 + nl)),
+      { method: dv.getUint16(p + 10, true), size: dv.getUint32(p + 20, true), lo: dv.getUint32(p + 42, true) });
+    p += 46 + nl + xl + cl;
+  }
+  const read = async name => {
+    const f = files.get(name); if (!f) return null;
+    const start = f.lo + 30 + dv.getUint16(f.lo + 26, true) + dv.getUint16(f.lo + 28, true);
+    const raw = u8.subarray(start, start + f.size);
+    if (f.method === 0) return td.decode(raw);
+    return new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+  };
+  const xml = s => new DOMParser().parseFromString(s, "application/xml");
+  const ss = [], sst = await read("xl/sharedStrings.xml");
+  if (sst) for (const si of xml(sst).getElementsByTagName("si")) {
+    let t = ""; for (const x of si.getElementsByTagName("t")) if (x.parentNode.nodeName !== "rPh") t += x.textContent; ss.push(t);
+  }
+  let sheet = "xl/worksheets/sheet1.xml";
+  try {
+    const rid = xml(await read("xl/workbook.xml")).getElementsByTagName("sheet")[0].getAttribute("r:id");
+    for (const r of xml(await read("xl/_rels/workbook.xml.rels")).getElementsByTagName("Relationship"))
+      if (r.getAttribute("Id") === rid) { const t = r.getAttribute("Target"); sheet = t.startsWith("/") ? t.slice(1) : "xl/" + t.replace(/^\.\//, ""); }
+  } catch {}
+  const sx = await read(sheet); if (!sx) throw new Error("no worksheet found");
+  const grid = [];
+  for (const c of xml(sx).getElementsByTagName("c")) {
+    const m = /^([A-Z]+)(\d+)$/.exec(c.getAttribute("r") || ""); if (!m) continue;
+    let col = 0; for (const ch of m[1]) col = col * 26 + ch.charCodeAt(0) - 64;
+    const t = c.getAttribute("t"), v = c.getElementsByTagName("v")[0];
+    let val = null;
+    if (t === "s") val = v ? ss[+v.textContent] : null;
+    else if (t === "inlineStr") val = [...c.getElementsByTagName("t")].map(x => x.textContent).join("");
+    else if (v) val = (t === "str" || t === "e" || t === "b") ? v.textContent : +v.textContent;
+    (grid[+m[2] - 1] ||= [])[col - 1] = val;
+  }
+  for (let i = 0; i < grid.length; i++) grid[i] ||= [];
+  return grid;
+}
+
+// ======================= Equipment loadout grid → model =======================
+// Layout: a "TYPE" header row with one column per doctrine position (SSD, ISD, …), one row per equipment line; blank rows separate
+// the ships / vehicles / personnel-and-equipment blocks. To the right: "Task Force Assignments" (TYPE, Quantity) and "EQUIPMENT SCHEDULE".
+function parseLoadout(grid, name) {
+  const cell = (r, c) => blank(grid[r]?.[c]);
+  const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+  const h = grid.findIndex(row => row && blank(row[0]).toUpperCase() === "TYPE");
+  if (h < 0) throw new Error("no TYPE header row in column A");
+  const positions = [];
+  let c = 1;
+  while (cell(h, c)) { positions.push({ key: cell(h, c).replace(/\s+/g, " "), ci: c }); c++; }
+  if (!positions.length) throw new Error("no position columns next to TYPE");
+  const pairs = [];
+  for (let k = c; k < (grid[h] || []).length; k++) if (cell(h, k).toUpperCase() === "TYPE" && /quant/i.test(cell(h, k + 1))) pairs.push(k);
+  const tf = [];
+  if (pairs[0] != null) for (let r = h + 1; r < grid.length && cell(r, pairs[0]); r++) tf.push({ label: cell(r, pairs[0]), qty: num(grid[r][pairs[0] + 1]) });
+  const schedule = new Map();
+  if (pairs[1] != null) for (let r = h + 1; r < grid.length; r++) {
+    const n = cell(r, pairs[1]); if (n) schedule.set(normType(n), (schedule.get(normType(n)) || 0) + num(grid[r][pairs[1] + 1]));
+  }
+  const rows = [], byNorm = new Map();
+  let block = 0, gap = false;
+  for (let r = h + 1; r < grid.length; r++) {
+    const nm = cell(r, 0);
+    if (!nm) { if (rows.length && !gap) { block++; gap = true; } continue; }
+    gap = false;
+    const alloc = positions.map(p => num(grid[r][p.ci])), k = normType(nm);
+    const prev = byNorm.get(k);
+    if (prev) { alloc.forEach((v, i) => prev.alloc[i] += v); prev.dup = true; continue; }   // e.g. "Ketifree Air Mover" is listed twice
+    const row = { name: nm, norm: k, block, alloc, sheetOrder: rows.length };
+    rows.push(row); byNorm.set(k, row);
+  }
+  // pair Task Force assignment labels with position columns: by name first, then by order
+  positions.forEach(p => { p.compact = compact(p.key); p.tf = null; });
+  const used = new Set();
+  positions.forEach(p => {
+    const i = tf.findIndex((t, j) => !used.has(j) && (compact(t.label) === p.compact ||
+      (Math.min(p.compact.length, compact(t.label).length) >= 3 && (compact(t.label).startsWith(p.compact) || p.compact.startsWith(compact(t.label))))));
+    if (i >= 0) { used.add(i); p.tf = tf[i]; }
+  });
+  positions.forEach((p, i) => { if (!p.tf && tf[i] && !used.has(i)) { used.add(i); p.tf = tf[i]; } });
+  return { name, positions, rows, schedule, tfCount: tf.length };
+}
+
+// ======================= persistence =======================
+const DB = {
+  open() {
+    return this.p ||= new Promise((res, rej) => {
+      const r = indexedDB.open("inventoryExplorer", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("files", { keyPath: "key" });
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+  },
+  async tx(mode, fn) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const t = db.transaction("files", mode), st = t.objectStore("files"), out = fn(st);
+      t.oncomplete = () => res(out.result); t.onerror = () => rej(t.error);
+    });
+  },
+  put(f) { return this.tx("readwrite", s => s.put(f)).catch(() => {}); },
+  del(key) { return this.tx("readwrite", s => s.delete(key)).catch(() => {}); },
+  clear() { return this.tx("readwrite", s => s.clear()).catch(() => {}); },
+  all() { return this.tx("readonly", s => s.getAll()).catch(() => []); },
+};
+// Mapping choices (group → position, type → loadout line, cargo contents, TF quantities) survive new uploads.
+const SETTINGS_KEY = "invExplorerSettings";
+const SETTINGS_DEFAULT = { groupPos: {}, typeMap: {}, cargoMap: {}, tf: {}, useSurplus: true };
+let S = structuredClone(SETTINGS_DEFAULT);
+try { Object.assign(S, JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")); } catch {}
+const storeSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(S)); } catch {} };
+const saveSettings = () => { storeSettings(); Cloud.settingsChanged(); };
+
+// ======================= cloud sync hooks (the Firebase module at the end of the page fills in upload / pushSettings) =======================
+// A local change marks this device "dirty"; once signed in, the module uploads it. The version of the last synced set is kept here so a
+// newer set uploaded from another device is noticed and downloaded.
+const SYNC_KEY = "invExplorerSync";
+const syncMark = {
+  get() { try { return JSON.parse(localStorage.getItem(SYNC_KEY) || "{}"); } catch { return {}; } },
+  set(o) { try { localStorage.setItem(SYNC_KEY, JSON.stringify({ ...syncMark.get(), ...o })); } catch {} },
+};
+const Cloud = {
+  upload: null, pushSettings: null,
+  changed() { syncMark.set({ dirty: true }); this.upload?.(); },
+  settingsChanged() { syncMark.set({ settingsDirty: true }); this.pushSettings?.(); },
+};
+const persist = s => DB.put({ key: s.key, name: s.name, path: s.path, mtime: s.mtime, size: s.size, added: s.added, kind: s.kind, text: s.text, buf: s.buf });
+// a file set downloaded from the cloud replaces whatever this device had
+async function replaceSources(files) {
+  sources = []; Object.values(TS).forEach(t => { t.filters.clear(); t.query = ""; t.page = 0; t.inside = null; });
+  for (const f of files) { await parseSource(f); sources.push(f); }
+  await DB.clear();
+  for (const s of sources) if (!s.error) await persist(s);
+  closeDrawer(); rebuild();
+}
+function applyRemoteSettings(obj) {
+  S = { ...structuredClone(SETTINGS_DEFAULT), ...obj };
+  storeSettings();
+  if (M?.ents.length) { applyLoadout(); computeReq(); buildTabs(); render(); }
+}
+
+// ======================= sources =======================
+const ET_LIST = ["Ships", "Vehicles", "NPCs", "Droids", "Items", "Facilities"];
+const REQUIRED = ["uid", "entityType_name", "name", "container_uid"];
+let sources = [];   // {key, name, path, mtime, size, added, kind: "csv"|"xlsx", text|buf, recs, et, error, stats}
+
+async function parseSource(src) {
+  src.error = ""; src.recs = []; src.loadout = null;
+  if (src.kind === "xlsx") {
+    try { src.loadout = parseLoadout(await readXlsx(src.buf), src.name); }
+    catch (e) { src.error = "not an Equipment loadout sheet (" + e.message + ")"; }
+    return;
+  }
+  const rows = parseCSV(src.text), hdr = rows.shift() || [];
+  const miss = REQUIRED.filter(c => !hdr.includes(c));
+  if (miss.length) { src.error = `not an SWC inventory export (missing ${miss.join(", ")})`; return; }
+  const ets = new Map();
+  rows.forEach(r => {
+    const o = {}; hdr.forEach((h, i) => o[h] = r[i] ?? "");
+    if (!o.uid || !ET_LIST.includes(o.entityType_name)) return;
+    src.recs.push(o); ets.set(o.entityType_name, (ets.get(o.entityType_name) || 0) + 1);
+  });
+  src.et = [...ets.keys()].join(", ");
+  if (!src.recs.length) src.error = "no inventory rows";
+}
+
+async function collectDropped(dt) {
+  const items = [...(dt.items || [])].map(i => i.webkitGetAsEntry?.()).filter(Boolean);
+  if (!items.length) return [...dt.files];
+  const out = [];
+  const walk = async (entry, path) => {
+    if (entry.isFile) { const f = await new Promise((res, rej) => entry.file(res, rej)); f._path = path + f.name; out.push(f); return; }
+    const rd = entry.createReader();
+    for (;;) {
+      const batch = await new Promise((res, rej) => rd.readEntries(res, rej));
+      if (!batch.length) break;
+      for (const e of batch) await walk(e, path + entry.name + "/");
+    }
+  };
+  for (const e of items) await walk(e, "");
+  return out;
+}
+
+async function addFiles(list, replace = true) {
+  const files = [...list].filter(f => /\.(csv|xlsx)$/i.test(f.name) && !f.name.startsWith("~$"));
+  const busy = document.getElementById("busy");
+  if (!files.length) { busy.textContent = "No .csv or .xlsx files found in what was dropped."; return; }
+  if (replace) {
+    sources = []; Object.values(TS).forEach(t => { t.filters.clear(); t.query = ""; t.page = 0; t.inside = null; });
+    document.getElementById("q").value = ""; closeDrawer();
+    await DB.clear();
+  }
+  let skipped = 0;
+  for (const f of files) {
+    busy.textContent = `Reading ${f.name}…`;
+    const key = `${f.name}|${f.lastModified}|${f.size}`;
+    if (sources.some(s => s.key === key)) { skipped++; continue; }
+    const kind = /\.xlsx$/i.test(f.name) ? "xlsx" : "csv";
+    const src = { key, name: f.name, path: f._path || f.webkitRelativePath || f.name, mtime: f.lastModified, size: f.size,
+      added: Date.now() + sources.length, kind };
+    if (kind === "xlsx") src.buf = await f.arrayBuffer(); else src.text = await f.text();
+    await parseSource(src);
+    sources.push(src);
+    if (!src.error) persist(src);
+  }
+  busy.textContent = skipped ? `${skipped} identical file(s) were skipped.` : "";
+  rebuild();
+  if (sources.some(s => s.error) || skipped) document.getElementById("sources").open = true;
+  Cloud.changed();
+}
+function removeSource(key) { sources = sources.filter(s => s.key !== key); DB.del(key); rebuild(); Cloud.changed(); }
+async function clearAll() { sources = []; await DB.clear(); closeDrawer(); rebuild(); Cloud.changed(); }
+
+// ======================= model: entities, links, groups =======================
+const ORG_TAGS = new Set(["Imperial Military", "Emerald Taskforce"]);
+const PHONETIC = new Set("Alpha Bravo Charlie Delta Echo Foxtrot Golf Hotel India Juliet Kilo Lima Mike November Oscar Papa Quebec Romeo Sierra Tango Uniform Victor Whiskey X-ray Yankee Zulu".split(" "));
+const GROUP_RE = /^[A-Z]{3} [A-Za-z]/;   // "ISD Artemis": 3-letter class prefix + flagship name
+const RESERVE = "Emerald TF Reserve", OFFICERS = "Officers (character-held)", UNASSIGNED = "(unassigned)";
+// Default doctrine position for each group prefix (matched against the loadout's column headers, ignoring punctuation)
+const PREFIX_POS = { SSD: "ssd", ISD: "isd", VSD: "vsd", INT: "int", NEB: "nebb", LCR: "lancer", CKS: "carrs", CKI: "carri", CNA: "corona",
+  ARQ: "arq", DPC: "dp20c", CRV: "cr90a", RDR: "raidr", TCB: "mixbn", INS: "inscstrike" };
+// Inventory type → loadout line where the names differ too much to match automatically
+const ALIAS = {
+  "Items:Remote": "Training Remote", "Items:Multiple Sensor Pack": "Multi Sensor Pack",
+  "Items:Amphibian Survival Mask": "Amphibious Mask", "Items:Amphibian Survival Suit": "Amphibous Suit",
+  "Items:Amphibian Survival Backpack": "Amphibious Backpack", "Items:C-M Frag Storm Heavy Shotgun": "CM Fragstorm Shotgun",
+  "Items:Battle Armour": "Battle Armour - Navy Custom", "Items:Tactical Helmet": "Tactical Helmet - Navy Custom",
+  "Droids:R3 Series Astromech": "R-3 Unit", "Vehicles:Kettrifee Air Mover": "Ketifree Air Mover",
+};
+// Abbreviations used in cargo container names → the type they hold
+const ABBR = { ppg: "Portable Power Generator", hstick: "Healing Stick", bpatch: "Bacta Patch", bactarefil: "Bacta Refill", refill: "Bacta Refill",
+  refil: "Bacta Refill", stims: "Stimpack", msp: "Multiple Sensor Pack", macros: "Macro Binoculars", macro: "Macro Binoculars",
+  craftkit: "Crafting Kit", stuncuffs: "Stun Cuffs", framecharge: "Frame Charge", restrainingbolt: "Restraining Bolt", im22t4: "Imperial Munitions 22T4",
+  "22t4": "Imperial Munitions 22T4", snarmour: "Snow Trooper Armour", snhelmet: "Snow Trooper Helmet", asbackpack: "Amphibian Survival Backpack",
+  asmask: "Amphibian Survival Mask", assuit: "Amphibian Survival Suit", cmfragstorm: "C-M Frag Storm Heavy Shotgun", battlearmour: "Battle Armour",
+  valken38: "Valken-38 Carbine", shipparts: "Ship Parts", flightsuit: "Imperial Fighter Pilot Flight Suit", subspaceradio: "Sub-Space Radio",
+  binders: "Binders", jetpacks: "Jetpack" };
+
+let M = null;   // the linked model
+let L = null;   // the loadout in use
+
+function buildModel() {
+  // ---- merge records: newest file wins per uid
+  const csvs = sources.filter(s => !s.error && s.kind === "csv").sort((a, b) => a.mtime - b.mtime || a.added - b.added);
+  const byUid = new Map();
+  csvs.forEach(s => {
+    s.stats = { rows: s.recs.length, won: 0, superseded: 0 };
+    // newer file wins field by field; a column the newer file doesn't have at all (e.g. NPC XP in an API sync) keeps the older value
+    s.recs.forEach(rec => {
+      const prev = byUid.get(rec.uid);
+      if (prev) prev.src.stats.superseded++;
+      byUid.set(rec.uid, { rec: prev ? { ...prev.rec, ...rec } : rec, src: s });
+    });
+  });
+  const ents = [];
+  byUid.forEach(({ rec, src }) => {
+    src.stats.won++;
+    ents.push({ uid: rec.uid, et: rec.entityType_name, id: rec.ID, name: blank(rec.name) || "(no name)", type: blank(rec.type_name),
+      cls: blank(rec.class_name), rec, src, tagsRaw: blank(rec.tags).split(";").map(t => t.trim()).filter(Boolean), info: blank(rec.infotext),
+      parentUid: blank(rec.container_uid), ptype: blank(rec.container_type_name), pname: blank(rec.containerName || rec.container_name), kids: [] });
+  });
+  const E = new Map(ents.map(e => [e.uid, e]));
+  ents.forEach(e => { const p = E.get(e.parentUid); if (p && p !== e) { e.p = p; p.kids.push(e); } });
+  ents.forEach(e => { const seen = new Set([e]); for (let a = e.p; a; a = a.p) { if (seen.has(a)) { e.p.kids = e.p.kids.filter(k => k !== e); e.p = null; break; } seen.add(a); } });
+
+  // display names: disambiguate duplicates ("SDG", "Training Academy") with the ID
+  const nameCount = new Map();
+  ents.forEach(e => { const k = e.et + "|" + e.name; nameCount.set(k, (nameCount.get(k) || 0) + 1); });
+  ents.forEach(e => e.label = nameCount.get(e.et + "|" + e.name) > 1 ? `${e.name} #${e.id}` : e.name);
+
+  // ---- groups from tags ("ISD Artemis"), folding near-duplicate spellings into the most common one
+  const groupOfTag = t => { const s = t.replace(/^ETF\s+/i, ""); if (s !== t && GROUP_RE.test(s)) t = s; return GROUP_RE.test(t) ? t : null; };
+  const rawCount = new Map();
+  ents.forEach(e => e.tagsRaw.forEach(t => { if (/\breserve\b/i.test(t)) return; const g = groupOfTag(t); if (g) rawCount.set(g, (rawCount.get(g) || 0) + 1); }));
+  const canon = new Map(), kept = [];
+  [...rawCount].sort((a, b) => b[1] - a[1]).forEach(([g]) => {
+    const pre = g.slice(0, 3).toUpperCase(), nm = compact(g.slice(4));
+    const hit = kept.find(k => k.pre === pre && (k.nm === nm || (nm.length >= 4 && osa(k.nm, nm) <= (nm.length >= 8 ? 2 : 1))));
+    if (hit) { canon.set(g, hit.name); hit.variants.push(g); } else { kept.push({ pre, nm, name: g, variants: [] }); canon.set(g, g); }
+  });
+  const G = new Map();
+  kept.forEach(k => G.set(k.name, { name: k.name, prefix: k.pre, short: k.name.slice(4), nm: k.nm, kind: "tag", variants: k.variants, flagship: null, parent: null }));
+  G.set(RESERVE, { name: RESERVE, prefix: "", short: "", nm: "", kind: "reserve", variants: [] });
+  G.set(OFFICERS, { name: OFFICERS, prefix: "", short: "", nm: "", kind: "officers", variants: [] });
+
+  // ---- labels: a group named in free text ("CNA Leveler: Riot Shield", "Container: Healing Stick - Challenger", "Reserve: E-11")
+  const byPre = {};
+  kept.forEach(k => (byPre[k.pre] ||= []).push(k));
+  const LRE = kept.length ? new RegExp(`(?:^|[^A-Za-z])(${Object.keys(byPre).join("|")})(?![A-Za-z])[\\s:/_-]*([A-Za-z]+)(?:[\\s_-]+([A-Za-z]+))?(?:[\\s_-]+([A-Za-z]+))?`, "gi") : null;
+  const shortCount = new Map(); kept.forEach(k => shortCount.set(k.nm, (shortCount.get(k.nm) || 0) + 1));
+  const nameOnly = new Map();
+  kept.forEach(k => { if (shortCount.get(k.nm) === 1 && k.nm.length >= 5 && !PHONETIC.has(k.name.slice(4))) nameOnly.set(k.nm, k.name); });
+  const alts = kept.filter(k => nameOnly.has(k.nm)).map(k => reEsc(k.name.slice(4)).split(/\s+/).join("\\s*"));
+  const NRE = alts.length ? new RegExp("(?:^|[^A-Za-z])(" + alts.join("|") + ")(?![A-Za-z])", "i") : null;
+  function labelOf(text) {
+    if (!text) return null;
+    if (LRE) {
+      let m, best = null; LRE.lastIndex = 0;
+      while ((m = LRE.exec(text))) {
+        const ws = [m[2], m[3], m[4]].filter(Boolean).map(w => w.toLowerCase());
+        for (const k of byPre[m[1].toUpperCase()] || []) {
+          const tol = k.nm.length >= 8 ? 2 : k.nm.length >= 4 ? 1 : 0;
+          for (let n = 1; n <= ws.length; n++) {
+            const c = ws.slice(0, n).join(""), d = c === k.nm ? 0 : osa(c, k.nm);
+            if (d <= tol && (!best || d < best.d)) best = { d, name: k.name };
+          }
+        }
+        if (best && best.d === 0) break;
+        LRE.lastIndex = m.index + 1;
+      }
+      if (best) return best.name;
+    }
+    if (NRE) { const m = NRE.exec(text); if (m) return nameOnly.get(compact(m[1])); }
+    if (/\breserves?\b/i.test(text)) return RESERVE;
+    return null;
+  }
+
+  // ---- own group from tags; flagships and parent groups ("CRV Prodigy" is tagged "SSD Absolute" too → it belongs to the SSD)
+  // A company tag ("Hotel") with no group tag means the battalion whose name ends in that word ("TCB Starfort Hotel").
+  const unitGroup = new Map();
+  kept.forEach(k => { const w = k.name.split(" ").pop(); if (PHONETIC.has(w)) unitGroup.set(w, unitGroup.has(w) ? null : k.name); });
+  ents.forEach(e => {
+    e.tg = []; e.other = []; e.branch = []; e.unit = []; let res = false;
+    e.tagsRaw.forEach(t => {
+      if (ORG_TAGS.has(t)) return;
+      if (/\breserve\b/i.test(t)) { res = true; return; }
+      const g = groupOfTag(t);
+      if (g) { const c = canon.get(g); if (!e.tg.includes(c)) e.tg.push(c); return; }
+      if (t.startsWith("Military - ")) { e.branch.push(t.slice(11).trim().replace(/\b\w/g, c => c.toUpperCase()).replace(/\B\w+/g, w => w.toLowerCase())); return; }
+      if (PHONETIC.has(t)) { e.unit.push(t); return; }
+      e.other.push(t);
+    });
+    const nm = compact(e.name);
+    e.own = e.tg.find(g => G.get(g).nm === nm) || e.tg[0] || null;
+    if (!e.own) { const u = e.unit.find(u => unitGroup.get(u)); if (u) { e.own = unitGroup.get(u); e.ownSrc = `Company tag (${u})`; } }
+    if (!e.own && res) e.own = RESERVE;
+    if (e.et === "Ships" && e.own && G.get(e.own).nm === nm && G.get(e.own).kind === "tag") {
+      const g = G.get(e.own); g.flagship = e;
+      const par = e.tg.find(x => x !== e.own); if (par) g.parent = par;
+    }
+  });
+
+  // ---- resolve every record's group
+  //   own tag → (unless it is equipped gear) a group named in its name/info text → whatever its holder belongs to → the label anyway
+  function resolve(e) {
+    if (e.g !== undefined) return;
+    e.g = null; e.gsrc = "None";
+    e.labelG = labelOf(e.name) || labelOf(e.info);
+    e.hg = null;
+    if (e.p) { resolve(e.p); e.hg = e.p.g; }
+    else if (e.ptype === "Characters") e.hg = OFFICERS;
+    if (e.own) { e.g = e.own; e.gsrc = e.ownSrc ? "Company tag" : "Own tag"; return; }
+    const equipped = e.et === "Items" && blank(e.rec.equipped) && e.rec.equipped !== "Not Equipped";
+    if (e.labelG && !equipped) { e.g = e.labelG; e.gsrc = "Named in its name / info text"; return; }
+    if (e.hg) { e.g = e.hg; e.gsrc = e.p ? "Inherited from holder" : "Held by a character"; return; }
+    if (e.labelG) { e.g = e.labelG; e.gsrc = "Named in its name / info text"; }
+  }
+  ents.forEach(resolve);
+  // a child group's flagship counts toward its parent's allocation (the SSD's CR-90), everything else toward its own group
+  const toParent = (e, gn) => { const g = gn && G.get(gn); return g && g.flagship === e && g.parent ? g.parent : gn; };
+  ents.forEach(e => e.dgA = toParent(e, e.g));
+  // ---- physical placement: which group flagships is this record actually inside (itself included)?
+  //   with its group → counts there either way; aboard another flagship → physically that (nearest) group; aboard none → detached
+  ents.forEach(e => {
+    const chain = [];
+    for (let a = e; a; a = a.p) { const fg = a.own && G.get(a.own); if (fg && fg.flagship === a) chain.push(fg.name); }
+    const g = e.g && G.get(e.g);
+    e.pg = chain[0] || null;
+    if (!g || g.kind !== "tag") e.place = "No group (reserve / unassigned / players)";
+    else if (chain.includes(e.g)) e.place = "With its group's flagship";
+    else if (!g.flagship) e.place = "Group has no flagship ship";
+    else if (chain.length) e.place = "Aboard another group's flagship";
+    else e.place = "Detached (not aboard any flagship)";
+    const phys = e.g && chain.includes(e.g) ? e.g : chain[0] || (g && g.kind !== "tag" ? e.g : null);
+    e.dgP = toParent(e, phys);
+  });
+  G.forEach(g => {   // the player in charge of a group's flagship (pilot, or a character commander — not a faction)
+    const r = g.flagship?.rec;
+    g.officer = r ? (blank(r.pilot_name) || (r.commander_type === "1" ? blank(r.commander_name) : "")) : "";
+  });
+  G.forEach(g => g.n = 0);
+  ents.forEach(e => { if (e.g) G.get(e.g).n++; });
+  [...G.values()].forEach(g => { if (g.kind !== "tag" && !g.n) G.delete(g.name); });
+
+  // ---- physical chain: aboard (nearest ship), top-level holder, location, holder kind
+  const HOLDER_KIND = { Systems: "In space", Cities: "City", Characters: "Character", Planets: "Planet surface", Stations: "Station",
+    NPCs: "NPC (not loaded)", Ships: "Ship (not loaded)", Items: "Item (not loaded)", Facilities: "Facility (not loaded)", Vehicles: "Vehicle (not loaded)" };
+  ents.forEach(e => {
+    let a = e.p; while (a && a.et !== "Ships") a = a.p;
+    e.aboard = a ? a.label : "";
+    let top = e; while (top.p) top = top.p;
+    // the outermost loaded record; a loose record (item on a player, NPC not in the exports) shows what holds it instead
+    e.top = top !== e ? top.label : ["Ships", "Facilities"].includes(e.et) ? e.label
+      : `(${(HOLDER_KIND[e.ptype] || e.ptype || "none").toLowerCase()}: ${e.pname || "?"})`;
+    let lr = e; while (lr && !blank(lr.rec.system)) lr = lr.p;
+    const sys = lr ? blank(lr.rec.system) : "", pl = lr ? blank(lr.rec.planet) : "";
+    e.loc = sys ? sys + (pl ? " / " + pl : " (space)") : "(unknown)";
+    e.holderKind = e.p ? e.p.et.replace(/s$/, "") : (HOLDER_KIND[e.ptype] || e.ptype || "(none)");
+    e.holder = e.p ? `${e.p.et.replace(/s$/, "")}: ${e.p.label}` : `${HOLDER_KIND[e.ptype] || e.ptype || "?"}: ${e.pname || "?"}`;
+  });
+  // total records inside each record (all levels)
+  const order = ents.slice().sort((a, b) => depth(b) - depth(a));
+  function depth(e) { if (e._d != null) return e._d; let d = 0; for (let a = e.p; a; a = a.p) d++; return e._d = d; }
+  ents.forEach(e => e.n = 0);
+  order.forEach(e => { if (e.p) e.p.n += 1 + e.n; });
+
+  M = { ents, E, G, csvs };
+}
+
+// ======================= loadout matching =======================
+function chooseLoadout() {
+  const x = sources.filter(s => s.kind === "xlsx" && !s.error && s.loadout).sort((a, b) => b.mtime - a.mtime)[0];
+  if (x) return x.loadout;
+  if (!DEFAULT_LOADOUT.grid) return null;
+  return parseLoadout(DEFAULT_LOADOUT.grid, DEFAULT_LOADOUT.name);
+}
+
+function applyLoadout() {
+  L = chooseLoadout();
+  const { ents, G } = M;
+  ents.forEach(e => e.dg = S.countBy === "physical" ? e.dgP : e.dgA);
+  if (!L) { ents.forEach(e => { e.row = -1; e.qty = 1; e.posKey = ""; }); M.keys = new Map(); return; }
+  const rowByNorm = new Map(L.rows.map((r, i) => [r.norm, i]));
+  const findRow = name => name == null ? null : (rowByNorm.get(normType(name)) ?? null);
+
+  // ---- positions & TF quantities
+  L.positions.forEach(p => { p.tfQty = S.tf[p.key] != null ? S.tf[p.key] : (p.tf ? p.tf.qty : null); });
+  const posByCompact = new Map(L.positions.map((p, i) => [p.compact, i]));
+  const defPos = g => {
+    if (g.kind === "officers") { const i = L.positions.findIndex(p => p.compact.startsWith("off")); return i; }
+    if (g.kind !== "tag") return -1;
+    const own = posByCompact.get(PREFIX_POS[g.prefix] || compact(g.prefix)) ?? -1;
+    const par = g.parent && G.get(g.parent);
+    // a child group uses the combined column ("SSD - CR90A") if the sheet has one; otherwise the parent's column already covers it
+    if (par && own >= 0) { const pp = posByCompact.get(PREFIX_POS[par.prefix] || compact(par.prefix)); return pp == null ? own : (posByCompact.get(L.positions[pp].compact + L.positions[own].compact) ?? -1); }
+    return own;
+  };
+  G.forEach(g => {
+    g.defPos = defPos(g);
+    const o = S.groupPos[g.name];
+    g.pos = o === undefined ? g.defPos : (o === "" ? -1 : L.positions.findIndex(p => p.key === o));
+    g.mult = g.kind === "officers" && g.pos >= 0 ? Math.max(1, L.positions[g.pos].tfQty || 1) : 1;
+  });
+
+  // ---- inventory "keys": one per type (NPCs split by Marine / other branch); cargo containers by what they hold
+  const variantOf = e => (e.branch.some(b => /marine/i.test(b)) || /marine/i.test(e.info)) ? "Marine" : (e.branch[0] || "(no branch)");
+  const keys = new Map();
+  const keyFor = (k, et, type, extra) => { let o = keys.get(k); if (!o) keys.set(k, o = { key: k, et, type, records: 0, units: 0, cargo: false, ...extra }); return o; };
+  ents.forEach(e => { e.ik = null; e.qty = 1; });
+  ents.forEach(e => {
+    if (e.et === "Facilities" || e.type === "Cargo Container") return;
+    if (e.et === "NPCs") { const v = variantOf(e); e.ik = keyFor(`NPCs:${e.type} · ${v}`, "NPCs", e.type, { variant: v }); }
+    else e.ik = keyFor(`${e.et}:${e.type}`, e.et, e.type);
+  });
+  const autoRow = k => {
+    const al = findRow(ALIAS[k.key]); if (al != null) return al;
+    if (k.et === "NPCs") {
+      const base = "npc" + normType(k.type);
+      return (k.variant === "Marine" ? rowByNorm.get(base + "marine") : null) ?? rowByNorm.get(base) ?? -1;
+    }
+    const n = normType(k.type);
+    if (rowByNorm.has(n)) return rowByNorm.get(n);
+    if (n.length >= 8) { let best = -1, bd = 3; L.rows.forEach((r, i) => { const d = osa(n, r.norm); if (d < bd) { bd = d; best = i; } }); if (bd <= 2) return best; }
+    if (n.length >= 5) { const hits = L.rows.filter(r => r.norm.length >= 5 && (r.norm.startsWith(n) || n.startsWith(r.norm))); if (hits.length === 1) return rowByNorm.get(hits[0].norm); }
+    return -1;
+  };
+  const finalRow = k => { k.auto = autoRow(k); const o = S.typeMap[k.key]; k.row = o === undefined ? k.auto : (o === "" ? -1 : (findRow(o) ?? -1)); };
+  keys.forEach(finalRow);
+
+  // category of each loadout line: from the records mapped to it, else from its neighbours in the sheet
+  const keyEt = L.rows.map(() => null);
+  keys.forEach(k => { if (k.row >= 0 && !keyEt[k.row]) keyEt[k.row] = k.et; });
+  const near = i => {
+    for (let d = 1; d < L.rows.length; d++) for (const j of [i - d, i + d]) if (L.rows[j] && L.rows[j].block === L.rows[i].block && keyEt[j]) return keyEt[j];
+    return null;
+  };
+  L.rows.forEach((r, i) => { r.et = /^npc\b/i.test(r.name) ? "NPCs" : keyEt[i] || ["Ships", "Vehicles"][r.block] || near(i) || "Items"; });
+
+  // ---- cargo contents: vocabulary of item/droid types and personnel-block loadout lines, matched inside the container's name
+  const vocab = new Map();
+  const addTerm = (term, type, et) => { const k = vocabKey(term); if (k.length >= 3 && !vocab.has(k)) vocab.set(k, { type, et }); };
+  ents.forEach(e => { if ((e.et === "Items" || e.et === "Droids") && e.type && e.type !== "Cargo Container" && e.type !== "Custom Item") { addTerm(e.type, e.type, e.et); addTerm(e.type + "s", e.type, e.et); } });
+  L.rows.forEach(r => { if (r.block >= 2 && !/^npc\b/i.test(r.name)) { addTerm(r.name, r.name, r.et); addTerm(r.name.replace(/s$/, ""), r.name, r.et); } });
+  const typeEt = t => vocab.get(vocabKey(t))?.et || "Items";
+  Object.entries(ABBR).forEach(([a, t]) => { if (!vocab.has(a)) vocab.set(a, { type: t, et: typeEt(t) }); });
+  const terms = [...vocab.keys()].sort((a, b) => b.length - a.length);
+  M.vocab = [...new Set([...vocab.values()].map(v => v.type))].sort();
+  M.cargo = new Map();
+  ents.forEach(e => {
+    if (e.type !== "Cargo Container") return;
+    const fromSwc = blank(e.rec.cargo_contents);   // an API sync asks SWC what each container holds
+    let c = M.cargo.get(e.name);
+    if (!c) {
+      const cn = vocabKey(e.name), t = terms.find(t => cn.includes(t));
+      c = { name: e.name, guess: fromSwc || (t ? vocab.get(t).type : ""), swc: !!fromSwc, records: 0, units: 0 };
+      const o = S.cargoMap[e.name];
+      c.content = o === undefined ? c.guess : o;
+      M.cargo.set(e.name, c);
+    }
+    // no uses column at all (an API sync that couldn't read unit counts) → count the container once rather than as empty
+    e.qty = "uses" in e.rec ? Math.max(0, parseInt(e.rec.uses) || 0) : 1;
+    c.records++; c.units += e.qty;
+    const content = fromSwc && S.cargoMap[e.name] === undefined ? fromSwc : c.content;
+    e.content = content || "(unknown contents)";
+    if (content) {
+      const et = typeEt(content);
+      const k = keys.get(`${et}:${content}`) || keyFor(`${et}:${content}`, et, content);
+      if (k.row === undefined) finalRow(k);
+      e.ik = k; k.cargo = true;
+    } else { e.ik = keyFor("Items:Cargo Container (unknown contents)", "Items", "Cargo Container (unknown contents)"); if (e.ik.row === undefined) finalRow(e.ik); }
+  });
+  keys.forEach(k => { k.records = 0; k.units = 0; });
+  ents.forEach(e => { if (e.ik) { e.ik.records++; e.ik.units += e.qty; } });
+  ents.forEach(e => {
+    e.row = e.ik ? e.ik.row : -1;
+    const g = e.dg && G.get(e.dg);
+    e.posKey = g && g.pos >= 0 ? L.positions[g.pos].key : "";
+  });
+  M.keys = keys;
+}
+
+// ======================= requisition =======================
+let REQ = null;
+function computeReq() {
+  if (!L) { REQ = null; return; }
+  const { ents, G } = M, P = L.positions;
+  // scope filters: leave out the SC battalions, and/or every group whose flagship has no player pilot/commander
+  const isBn = i => P[i].compact === "mixbn" || /battalion/i.test(P[i].tf?.label || "");
+  G.forEach(g => g.excluded = g.pos >= 0 && ((S.exBattalion && isBn(g.pos)) || (S.onlyOfficer && g.kind === "tag" && !g.officer)));
+  const mapped = [...G.values()].filter(g => g.pos >= 0 && !g.excluded).sort((a, b) => a.pos - b.pos || a.name.localeCompare(b.name));
+  const slots = P.map(() => 0); mapped.forEach(g => slots[g.pos] += g.mult);
+  // an unfilled position has no ship, so no officer either
+  const unfilled = P.map((p, i) => p.tfQty == null || S.onlyOfficer || (S.exBattalion && isBn(i)) ? 0 : Math.max(0, p.tfQty - slots[i]));
+  const rows = L.rows.map((r, i) => ({ i, r, name: r.name, cat: r.et, perGroup: new Map(), reserve: 0, unassigned: 0, unmapped: 0, unmappedBy: new Map() }));
+  ents.forEach(e => {
+    if (e.row < 0 || !e.qty) return;
+    const x = rows[e.row], g = e.dg && G.get(e.dg);
+    if (g && g.excluded) return;
+    if (!g) x.unassigned += e.qty;
+    else if (g.kind === "reserve") x.reserve += e.qty;
+    else if (g.pos < 0) { x.unmapped += e.qty; x.unmappedBy.set(g.name, (x.unmappedBy.get(g.name) || 0) + e.qty); }
+    else x.perGroup.set(g.name, (x.perGroup.get(g.name) || 0) + e.qty);
+  });
+  rows.forEach(x => {
+    const a = x.r.alloc;
+    x.required = 0; x.held = 0; x.short = 0; x.surplus = 0; x.cells = new Map();
+    mapped.forEach(g => {
+      // a child group's own column lists its flagship, but that ship already counts toward the parent's allocation
+      const self = g.parent && g.flagship && g.flagship.row === x.i ? 1 : 0;
+      const req = Math.max(0, a[g.pos] * g.mult - self), held = x.perGroup.get(g.name) || 0;
+      x.cells.set(g.name, { req, held });
+      x.required += req; x.held += held; x.short += Math.max(0, req - held); x.surplus += Math.max(0, held - req);
+    });
+    x.unfilledReq = P.reduce((s, p, i) => s + unfilled[i] * a[i], 0);
+    x.required += x.unfilledReq; x.short += x.unfilledReq;
+    x.available = x.reserve + x.unassigned + (S.useSurplus ? x.surplus + x.unmapped : 0);
+    x.net = Math.max(0, x.short - x.available);
+    x.moves = x.short - x.net;
+    x.total = x.held + x.reserve + x.unassigned + x.unmapped;
+    x.schedule = L.schedule.get(x.r.norm);
+    x.sheetReq = P.reduce((s, p, i) => s + a[i] * (p.tfQty || 0), 0);
+  });
+  REQ = { rows, mapped, slots, unfilled, excluded: [...G.values()].filter(g => g.excluded) };
+}
+
+// ======================= explorer tabs =======================
+const NONE = "(none)";
+const LVL_GAP = ["≤ 500", "501 – 1,000", "1,001 – 2,500", "2,501 – 5,000", "> 5,000", "Max level"];
+const HULL_ORDER = ["100%", "75 – 99%", "50 – 74%", "25 – 49%", "< 25%", "(n/a)"];
+const xpFor = l => 500 * l * (l - 1);
+const hullB = p => p == null ? "(n/a)" : p >= 100 ? "100%" : p >= 75 ? "75 – 99%" : p >= 50 ? "50 – 74%" : p >= 25 ? "25 – 49%" : "< 25%";
+const COMMON_DIMS = [
+  { key: "type", label: "Type", get: r => r.type },
+  { key: "group", label: "Group", get: r => r.group },
+  { key: "gsrc", label: "How the group was assigned", get: r => r.gsrc },
+  { key: "pos", label: "Doctrine position", get: r => r.pos },
+  { key: "loRow", label: "Loadout line", get: r => r.loRow },
+  { key: "dgroup", label: "Counts toward group", get: r => r.dgroup, hidden: true },
+  { key: "place", label: "Tagged group vs physical location", get: r => r.place },
+  { key: "pg", label: "Physically inside group flagship", get: r => r.pg },
+];
+const TAIL_DIMS = [
+  { key: "aboard", label: "Aboard ship", get: r => r.aboard },
+  { key: "top", label: "Top-level holder", get: r => r.top },
+  { key: "loc", label: "Location", get: r => r.loc },
+  { key: "holderKind", label: "Directly inside", get: r => r.holderKind },
+  { key: "info", label: "Info text", get: r => r.info },
+  { key: "other", label: "Other tags", get: r => r.other, multi: true },
+  { key: "cls", label: "Class", get: r => r.cls },
+  { key: "src", label: "From file", get: r => r.src },
+];
+const TAB_DEF = {
+  Ships: {
+    dims: [{ key: "where", label: "Docked / in space", get: r => r.where }, { key: "hullB", label: "Hull", get: r => r.hullB, order: HULL_ORDER },
+      { key: "cmdr", label: "Commander", get: r => r.cmdr }, { key: "pilot", label: "Pilot", get: r => r.pilot }],
+    cols: [["name", "Name"], ["id", "ID", 1], ["type", "Type"], ["group", "Group"], ["aboard", "Aboard"], ["loc", "Location"], ["hull", "Hull %", 1],
+      ["n", "Records inside", 1], ["pax", "Passengers", 1], ["cmdr", "Commander"], ["pilot", "Pilot"], ["info", "Info text"]],
+    extra(r, e) {
+      r.where = e.p ? "Docked in a ship" : e.ptype === "Systems" ? "In space" : e.ptype === "Cities" ? "Landed in a city" : (e.ptype || NONE);
+      r.cmdr = blank(e.rec.commander_name) || NONE; r.pilot = blank(e.rec.pilot_name) || NONE;
+      r.pax = parseInt(e.rec.passengersTotal) ? `${fmt(+e.rec.passengersTotal - (+e.rec.passengersRemaining || 0))}/${fmt(+e.rec.passengersTotal)}` : "";
+    },
+    pivot: ["group", "type"],
+  },
+  Vehicles: {
+    dims: [{ key: "hullB", label: "Hull", get: r => r.hullB, order: HULL_ORDER }],
+    cols: [["name", "Name"], ["id", "ID", 1], ["type", "Type"], ["group", "Group"], ["aboard", "Aboard"], ["loc", "Location"], ["hull", "Hull %", 1], ["n", "Records inside", 1], ["info", "Info text"]],
+    pivot: ["group", "type"],
+  },
+  NPCs: {
+    dims: [{ key: "lvl", label: "Level", get: r => String(r.lvl), order: "num", kind: "cols" }, { key: "branch", label: "Branch", get: r => r.branch, multi: true },
+      { key: "unit", label: "Unit / company tag", get: r => r.unit, multi: true }, { key: "gap", label: "XP to next level", get: r => r.gap, order: LVL_GAP },
+      { key: "working", label: "Working status", get: r => r.working }, { key: "sup", label: "Supervisor", get: r => r.sup }],
+    cols: [["name", "Name"], ["id", "ID", 1], ["lvl", "Lvl", 1], ["xp", "XP", 1], ["toNext", "To next", 1], ["group", "Group"], ["branch", "Branch"],
+      ["aboard", "Aboard"], ["n", "Items carried", 1], ["working", "Status"], ["sup", "Supervisor"], ["info", "Info text"]],
+    extra(r, e) {
+      r.lvl = parseInt(e.rec.XPLevel) || 0; r.xp = parseInt(e.rec.XP) || 0; r.toNext = r.lvl < 10 ? xpFor(r.lvl + 1) - r.xp : -1;
+      r.gap = r.toNext < 0 ? "Max level" : r.toNext <= 500 ? "≤ 500" : r.toNext <= 1000 ? "501 – 1,000" : r.toNext <= 2500 ? "1,001 – 2,500" : r.toNext <= 5000 ? "2,501 – 5,000" : "> 5,000";
+      r.branch = e.branch.slice().sort(); r.unit = e.unit.slice().sort();
+      r.working = e.rec.isWorking === "1" ? "Working" : "Idle"; r.sup = blank(e.rec.pilot_name) || NONE;   // SWC "pilot" = NPC supervisor
+    },
+    pivot: ["group", "lvl"],
+  },
+  Droids: {
+    dims: [{ key: "hullB", label: "Hull", get: r => r.hullB, order: HULL_ORDER }],
+    cols: [["name", "Name"], ["id", "ID", 1], ["type", "Type"], ["group", "Group"], ["gsrc", "Group from"], ["aboard", "Aboard"], ["loc", "Location"], ["hull", "Hull %", 1], ["info", "Info text"]],
+    pivot: ["group", "type"],
+  },
+  Items: {
+    dims: [{ key: "equipped", label: "Equipped slot", get: r => r.equipped }, { key: "content", label: "Cargo container contents", get: r => r.content },
+      { key: "audit", label: "Name label vs holder", get: r => r.audit }, { key: "holder", label: "Holder", get: r => r.holder }],
+    cols: [["name", "Name"], ["id", "ID", 1], ["type", "Type"], ["qty", "Units", 1], ["content", "Contents"], ["group", "Group"], ["gsrc", "Group from"],
+      ["holder", "Holder"], ["equipped", "Equipped"], ["aboard", "Aboard"], ["loRow", "Loadout line"], ["info", "Info text"]],
+    extra(r, e) {
+      r.equipped = blank(e.rec.equipped) || NONE;
+      r.content = e.type === "Cargo Container" ? e.content : "(not a cargo container)";
+      r.audit = e.own ? "Own tag" : e.labelG && e.hg ? (e.labelG === e.hg ? "Label matches holder" : "Label ≠ holder's group") : e.labelG ? "Label only" : e.hg ? "Holder only" : "Neither";
+    },
+    pivot: ["group", "type"], units: true,
+  },
+  Facilities: {
+    dims: [{ key: "city", label: "City", get: r => r.city }, { key: "powered", label: "Power", get: r => r.powered }, { key: "prod", label: "Production", get: r => r.prod },
+      { key: "built", label: "Construction", get: r => r.built }, { key: "hullB", label: "Hull", get: r => r.hullB, order: HULL_ORDER }],
+    cols: [["name", "Name"], ["id", "ID", 1], ["type", "Type"], ["city", "City"], ["loc", "Location"], ["n", "Records inside", 1], ["powered", "Power"], ["prod", "Production"], ["info", "Info text"]],
+    extra(r, e) {
+      r.city = blank(e.rec.city) || e.pname || NONE; r.powered = e.rec.isPowered === "1" ? "Powered" : "Unpowered";
+      r.prod = blank(e.rec.productionStatus) || NONE; r.built = e.rec.underConstruction === "1" ? "Under construction" : "Built";
+    },
+    pivot: ["type", "city"],
+  },
+};
+const TABS = [...ET_LIST, "Loadout check"];
+const TS = {};   // per-tab view state, kept across reloads
+const tabState = k => TS[k] ||= { filters: new Map(), query: "", sortKey: "name", sortDir: 1, page: 0, facetSearch: {}, inside: null, measure: "count", pivR: null, pivC: null };
+let active = "Ships";
+const T = {};    // per-tab data: R, DIMS, V, TOTAL, ORDER
+
+function buildTabs() {
+  ET_LIST.forEach(et => {
+    const def = TAB_DEF[et];
+    const R = M.ents.filter(e => e.et === et).map((e, i) => {
+      const hm = +e.rec.hullMax || 0;
+      const r = { e, i, uid: e.uid, id: +e.id || 0, name: e.label, type: e.type || NONE, cls: e.cls || NONE,
+        group: e.g || UNASSIGNED, dgroup: e.dg || UNASSIGNED, gsrc: e.gsrc, pos: e.posKey || "(no position)",
+        place: e.place, pg: e.pg || "(not inside any flagship)",
+        loRow: e.row >= 0 ? L.rows[e.row].name : (et === "Facilities" ? "(n/a)" : "(not in loadout)"), qty: e.qty,
+        aboard: e.aboard || "(not aboard a ship)", top: e.top, loc: e.loc, holderKind: e.holderKind, holder: e.holder,
+        info: e.info || "(blank)", other: e.other.slice().sort(), n: e.n, src: e.src.name,
+        hull: hm ? Math.round(100 * (+e.rec.hull || 0) / hm) : null };
+      r.hullB = hullB(r.hull);
+      def.extra?.(r, e);
+      r.hay = [r.name, r.id, r.type, r.info, r.group, r.holder, r.aboard, e.tagsRaw.join(" "), r.content || ""].join(" ").toLowerCase();
+      return r;
+    });
+    const all = [...COMMON_DIMS, ...def.dims, ...TAIL_DIMS];
+    const DIMS = all.filter(d => d.hidden || d.kind === "cols" || new Set(R.map(r => JSON.stringify(d.get(r)))).size > 1);
+    const V = {}, TOTAL = {}, ORDER = {};
+    DIMS.forEach(d => {
+      V[d.key] = R.map(r => { const v = d.get(r); return d.multi ? (v.length ? v : [NONE]) : [v]; });
+      const c = new Map(); V[d.key].forEach(vs => vs.forEach(v => c.set(v, (c.get(v) || 0) + 1))); TOTAL[d.key] = c;
+      const vals = [...c.keys()];
+      if (d.order === "num") vals.sort((a, b) => a - b);
+      else if (Array.isArray(d.order)) vals.sort((a, b) => d.order.indexOf(a) - d.order.indexOf(b));
+      else vals.sort((a, b) => (a.startsWith("(")) - (b.startsWith("(")) || c.get(b) - c.get(a) || a.localeCompare(b));
+      ORDER[d.key] = vals;
+    });
+    T[et] = { R, DIMS, V, TOTAL, ORDER, def };
+    const st = tabState(et);
+    [...st.filters.keys()].forEach(k => {
+      if (!TOTAL[k]) return st.filters.delete(k);
+      const s = new Set([...st.filters.get(k)].filter(v => TOTAL[k].has(v)));
+      s.size ? st.filters.set(k, s) : st.filters.delete(k);
+    });
+    if (st.inside && !M.E.has(st.inside.uid)) st.inside = null;
+    if (st.inside) st.inside.set = descendants(M.E.get(st.inside.uid));
+  });
+  document.getElementById("facets").innerHTML = ""; document.getElementById("facets").dataset.tab = "";
+}
+function descendants(e) { const s = new Set(), st = [...e.kids]; while (st.length) { const k = st.pop(); s.add(k.uid); st.push(...k.kids); } return s; }
+
+function rebuild() {
+  const ok = sources.filter(s => !s.error);
+  buildModel();
+  applyLoadout();
+  computeReq();
+  buildTabs();
+  const has = M.ents.length > 0;
+  document.getElementById("empty").hidden = has;
+  document.getElementById("app").hidden = !has;
+  document.querySelectorAll(".needs-data").forEach(el => el.style.display = has ? "" : "none");
+  const per = ET_LIST.filter(et => T[et].R.length).map(et => `${fmt(T[et].R.length)} ${et.toLowerCase()}`);
+  document.getElementById("meta").textContent = has ? `${per.join(" · ")} from ${plural(ok.filter(s => s.kind === "csv").length, "file")} · loadout: ${L ? L.name : "none"}`
+    : "Load SWC inventory exports (.csv) for ships, vehicles, NPCs, droids, items and facilities, plus the Equipment loadout (.xlsx)";
+  renderSources();
+  if (has) { if (!T[active]?.R.length && active !== "Loadout check") active = ET_LIST.find(et => T[et].R.length) || "Loadout check"; render(); }
+}
+
+function renderSources() {
+  const ok = sources.filter(s => !s.error), csvs = ok.filter(s => s.kind === "csv");
+  document.getElementById("srcSummary").textContent = `${plural(csvs.length, "export")} · ${fmt(csvs.reduce((a, s) => a + s.recs.length, 0))} rows → ${fmt(M.ents.length)} unique records`
+    + ` · loadout: ${L ? L.name : "none"}` + (sources.length > ok.length ? ` · ${sources.length - ok.length} rejected` : "");
+  const date = t => new Date(t).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const newest = {};
+  csvs.forEach(s => s.et.split(", ").forEach(et => newest[et] = Math.max(newest[et] || 0, s.mtime)));
+  let h = `<p class="note">Loading new files replaces everything (use <b>＋ Add to current</b> to include one you forgot). The same uid in several files is
+    de-duplicated — the <b>most recently modified</b> file wins. A file that is much older than the newest export of the same kind may hold records that no
+    longer exist (sold, destroyed, moved out of the faction): its "kept" count shows how many records come only from it.</p>
+    <div class="tablewrap"><table class="data"><tr><th>File</th><th>Kind</th><th>Modified</th><th class="num">Rows</th><th class="num">Kept</th><th class="num">Superseded by newer</th><th>Status</th><th></th></tr>`;
+  sources.slice().sort((a, b) => (a.et || "").localeCompare(b.et || "") || a.mtime - b.mtime).forEach(s => {
+    const st = s.stats || {};
+    const old = s.kind === "csv" && !s.error && s.et.split(", ").some(et => newest[et] - s.mtime > 3 * 864e5);
+    h += `<tr><td title="${esc(s.path || s.name)}">${esc(s.path || s.name)}</td><td>${esc(s.kind === "xlsx" ? "Loadout" : s.et || "")}</td><td>${date(s.mtime)}</td>` + (s.error
+      ? `<td colspan="3"></td><td class="bad">Rejected: ${esc(s.error)}</td>`
+      : s.kind === "xlsx" ? `<td class="num">${fmt(s.loadout.rows.length)} lines</td><td colspan="2"></td><td>${L && L === s.loadout ? '<span class="ok">✓ in use</span>' : '<span class="sub">older loadout, not used</span>'}</td>`
+      : `<td class="num">${fmt(st.rows)}</td><td class="num">${fmt(st.won)}</td><td class="num">${fmt(st.superseded)}</td>
+         <td>${old && st.won ? `<span class="warn">older snapshot — ${fmt(st.won)} records only here</span>` : '<span class="ok">✓ OK</span>'}</td>`)
+      + `<td><button class="x" data-key="${esc(s.key)}" title="Remove this file">✕</button></td></tr>`;
+  });
+  if (!sources.some(s => s.kind === "xlsx" && !s.error)) h += `<tr><td colspan="6">Equipment loadout</td><td class="bad">not loaded — drop Equipment loadout.xlsx with the exports (＋ Add to current)</td><td></td></tr>`;
+  h += `</table></div><div class="tbar" style="margin-top:8px"><div class="grow"></div><button id="clearAll">Remove all files</button></div>`;
+  const body = document.getElementById("srcBody"); body.innerHTML = h;
+  body.querySelectorAll("button[data-key]").forEach(b => b.onclick = () => removeSource(b.dataset.key));
+  body.querySelector("#clearAll").onclick = () => { if (confirm("Remove all loaded files from the explorer?")) clearAll(); };
+}
+
+// ======================= filtering =======================
+const weight = (st, r) => st.measure === "units" ? r.qty : 1;
+function compute(et) {
+  const { R, DIMS, V } = T[et], st = tabState(et);
+  const counts = {}; DIMS.forEach(d => counts[d.key] = new Map());
+  const pass = [], act = DIMS.filter(d => st.filters.has(d.key));
+  const inside = st.inside?.set;
+  for (let i = 0; i < R.length; i++) {
+    const r = R[i];
+    if (inside && !inside.has(r.uid)) continue;
+    if (st.query && !r.hay.includes(st.query)) continue;
+    let failKey = null, fails = 0;
+    for (const d of act) { const s = st.filters.get(d.key); if (!V[d.key][i].some(v => s.has(v))) { fails++; failKey = d.key; if (fails > 1) break; } }
+    if (fails > 1) continue;
+    const w = weight(st, r);
+    const bump = key => V[key][i].forEach(v => counts[key].set(v, (counts[key].get(v) || 0) + w));
+    if (fails === 1) { bump(failKey); continue; }
+    pass.push(r);
+    DIMS.forEach(d => bump(d.key));
+  }
+  return { counts, pass };
+}
+function toggle(key, val, exclusive) {
+  const st = tabState(active); let s = st.filters.get(key);
+  if (exclusive) st.filters.set(key, new Set([val]));
+  else {
+    if (!s) st.filters.set(key, s = new Set());
+    s.has(val) ? s.delete(val) : s.add(val);
+    if (!s.size) st.filters.delete(key);
+  }
+  st.page = 0; render();
+}
+// jump to an explorer tab with a fresh set of filters (used by the loadout matrix and the detail drawer)
+function openTab(et, filters = {}, inside = null) {
+  const st = tabState(et);
+  st.filters.clear(); st.query = ""; st.page = 0; st.inside = null;
+  Object.entries(filters).forEach(([k, v]) => st.filters.set(k, new Set([].concat(v))));
+  if (inside) st.inside = { uid: inside.uid, label: inside.label, set: descendants(inside) };
+  if (T[et].def.units && Object.keys(filters).includes("loRow")) st.measure = "units";
+  active = et; render(); scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// ======================= tooltip =======================
+const tip = document.getElementById("tip");
+function showTip(e, html) { tip.innerHTML = html; tip.style.display = "block"; moveTip(e); }
+function moveTip(e) {
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = e.clientX + 14, y = e.clientY + 14;
+  if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+  if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+function hover(el, fn) { el.onmousemove = e => showTip(e, fn()); el.onmouseleave = hideTip; }
+
+// ======================= render =======================
+function render() {
+  hideTip();
+  renderTabs();
+  const isL = active === "Loadout check";
+  document.getElementById("explorer").hidden = isL;
+  document.getElementById("loadout").hidden = !isL;
+  document.querySelector("header .needs-data").style.visibility = isL ? "hidden" : "";
+  if (isL) { renderLoadout(); return; }
+  const st = tabState(active);
+  document.getElementById("q").value = st.query;
+  const mw = document.getElementById("measureWrap"); mw.style.display = T[active].def.units ? "" : "none";
+  document.getElementById("measure").value = st.measure;
+  const { counts, pass } = compute(active);
+  renderChips(); renderTiles(pass); renderFacets(counts, pass); renderHeat(pass); renderTable(pass);
+}
+function renderTabs() {
+  const nav = document.getElementById("tabs");
+  nav.innerHTML = TABS.filter(t => t === "Loadout check" || T[t]?.R.length).map(t => {
+    const c = t === "Loadout check" ? (REQ ? REQ.rows.filter(x => x.net > 0).length + " short" : "") : fmt(T[t].R.length);
+    return `<button data-t="${t}" class="${t === active ? "on" : ""}">${t}<span class="c">${c}</span></button>`;
+  }).join("");
+  nav.querySelectorAll("button").forEach(b => b.onclick = () => { active = b.dataset.t; render(); });
+}
+
+function renderChips() {
+  const el = document.getElementById("chips"), st = tabState(active), { DIMS } = T[active]; el.innerHTML = "";
+  if (!st.filters.size && !st.query && !st.inside) { el.innerHTML = '<span class="sub">No filters — click any bar, column, or heatmap cell to filter. Clicks within one panel combine with OR; across panels with AND.</span>'; return; }
+  if (st.inside) addChip(el, "Inside", st.inside.label, () => { st.inside = null; st.page = 0; render(); });
+  if (st.query) addChip(el, "Search", `“${st.query}”`, () => { st.query = ""; st.page = 0; render(); });
+  DIMS.forEach(d => { const s = st.filters.get(d.key); if (s) addChip(el, d.label, [...s].join(", "), () => { st.filters.delete(d.key); st.page = 0; render(); }); });
+}
+function addChip(el, k, v, rm) {
+  const c = document.createElement("span"); c.className = "chip";
+  c.innerHTML = `<span>${esc(k)}: <b>${esc(v)}</b></span>`;
+  const b = document.createElement("button"); b.textContent = "×"; b.title = "Remove"; b.onclick = rm; c.appendChild(b); el.appendChild(c);
+}
+
+function renderTiles(pass) {
+  const { R } = T[active], st = tabState(active), n = pass.length;
+  const cnt = f => pass.filter(f).length;
+  const pct = x => n ? Math.round(100 * x / n) + "% of selection" : "—";
+  const inGroup = cnt(r => r.e.g && r.e.g !== RESERVE), res = cnt(r => r.e.g === RESERVE), un = cnt(r => !r.e.g);
+  const tiles = [[active, fmt(n), `of ${fmt(R.length)} total`]];
+  if (T[active].def.units) tiles.push(["Units", fmt(pass.reduce((a, r) => a + r.qty, 0)), "cargo containers count their contents"]);
+  if (active === "NPCs") {
+    const avg = n ? pass.reduce((a, r) => a + r.lvl, 0) / n : 0;
+    tiles.push(["Average level", n ? avg.toFixed(1) : "—", `level 10: ${fmt(cnt(r => r.lvl === 10))}`], ["Working now", fmt(cnt(r => r.working === "Working")), pct(cnt(r => r.working === "Working"))]);
+  }
+  if (["Ships", "Vehicles", "Droids", "Facilities"].includes(active)) { const d = cnt(r => r.hull != null && r.hull < 100); tiles.push(["Damaged hull", fmt(d), pct(d)]); }
+  if (active !== "Facilities") {
+    tiles.push(["In a group", fmt(inGroup), pct(inGroup)], ["Reserve", fmt(res), pct(res)], ["Unassigned", fmt(un), pct(un)]);
+    const nl = cnt(r => r.e.row < 0); tiles.push(["Not in loadout", fmt(nl), pct(nl)]);
+  } else {
+    const ins = pass.reduce((a, r) => a + r.n, 0); tiles.push(["Records inside", fmt(ins), "NPCs, items… in these facilities"]);
+  }
+  document.getElementById("tiles").innerHTML = tiles.map(([k, v, d]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+}
+
+const FACET_CAP = 150;
+function renderFacets(counts, pass) {
+  const host = document.getElementById("facets"), { DIMS, ORDER, TOTAL } = T[active], st = tabState(active);
+  const shown = DIMS.filter(d => !d.hidden);
+  if (host.dataset.tab !== active) {
+    host.innerHTML = ""; host.dataset.tab = active;
+    shown.forEach(d => {
+      const c = document.createElement("div"); c.className = "card"; c.id = "f-" + d.key;
+      const many = ORDER[d.key].length > 12;
+      c.innerHTML = `<div class="hd"><h2>${d.label}</h2><span class="sub"></span>${many ? '<input type="search" placeholder="filter…">' : ""}</div><div class="${d.kind === "cols" ? "" : "facet"}"></div>`;
+      if (many) { const inp = c.querySelector("input"); inp.value = st.facetSearch[d.key] || ""; inp.oninput = e => { st.facetSearch[d.key] = e.target.value.toLowerCase(); render(); }; }
+      host.appendChild(c);
+    });
+  }
+  const unit = st.measure === "units" ? "units" : active.toLowerCase();
+  const n = pass.reduce((a, r) => a + weight(st, r), 0);
+  shown.forEach(d => {
+    const card = document.getElementById("f-" + d.key);
+    const body = card.lastElementChild, sel = st.filters.get(d.key);
+    body.classList.toggle("dimmed", !!sel);
+    const cnt = counts[d.key];
+    const nonzero = ORDER[d.key].filter(v => cnt.get(v)).length;
+    card.querySelector(".sub").textContent = `${nonzero} of ${ORDER[d.key].length} values` + (d.multi ? " · may have several" : "");
+    const tot = v => st.measure === "units" ? null : TOTAL[d.key].get(v);
+    const max = Math.max(1, ...ORDER[d.key].map(v => Math.max(cnt.get(v) || 0, tot(v) || 0)));
+    body.innerHTML = "";
+    if (d.kind === "cols") {
+      const cols = document.createElement("div"); cols.className = "cols";
+      const xl = document.createElement("div"); xl.className = "xl";
+      ORDER[d.key].forEach(v => {
+        const c = cnt.get(v) || 0, t = tot(v) || 0;
+        const col = document.createElement("div"); col.className = "col" + (sel && sel.has(v) ? " sel" : "");
+        col.innerHTML = `<div class="cg" style="height:${100 * t / max}%"></div><span class="cv">${c ? fmt(c) : ""}</span><div class="cb" style="height:${100 * c / max}%"></div>`;
+        col.onclick = () => toggle(d.key, v);
+        hover(col, () => `<b>${d.label} ${esc(v)}</b><br>${fmt(c)} in selection <span class="t">· ${fmt(t)} total</span>`);
+        cols.appendChild(col);
+        xl.insertAdjacentHTML("beforeend", `<span class="${sel && sel.has(v) ? "sel" : ""}">${esc(v)}</span>`);
+      });
+      body.append(cols, xl);
+      return;
+    }
+    const fq = st.facetSearch[d.key] || "";
+    let shownN = 0, hiddenN = 0;
+    ORDER[d.key].forEach(v => {
+      if (fq && !v.toLowerCase().includes(fq)) return;
+      const c = cnt.get(v) || 0, t = tot(v);
+      if (!fq && shownN >= FACET_CAP && !(sel && sel.has(v))) { hiddenN++; return; }
+      shownN++;
+      const row = document.createElement("div");
+      row.className = "row" + (sel && sel.has(v) ? " sel" : "") + (c ? "" : " zero");
+      row.innerHTML = `<span class="lab">${esc(v)}</span><span class="track"><span class="ghost" style="width:${100 * (t ?? c) / max}%"></span><span class="bar" style="width:${100 * c / max}%"></span></span><span class="n">${fmt(c)}</span>`;
+      row.onclick = () => toggle(d.key, v);
+      hover(row, () => `<b>${esc(v)}</b><br>${fmt(c)} ${unit} in selection${n ? ` (${Math.round(100 * c / n)}%)` : ""}` + (t != null ? `<br><span class="t">${fmt(t)} in all ${active.toLowerCase()}</span>` : ""));
+      body.appendChild(row);
+    });
+    if (hiddenN) body.insertAdjacentHTML("beforeend", `<div class="sub" style="padding:4px">+ ${fmt(hiddenN)} more — type in the filter box</div>`);
+  });
+}
+
+// ======================= pivot heatmap =======================
+const SEQ = [0, 1, 2, 3, 4, 5, 6].map(i => `var(--seq-${i})`);
+function fillPivotSelects() {
+  const { DIMS, def } = T[active], st = tabState(active), opts = DIMS.filter(d => !d.hidden);
+  const pr = document.getElementById("pivR"), pc = document.getElementById("pivC");
+  const html = opts.map(d => `<option value="${d.key}">${d.label}</option>`).join("");
+  const has = k => opts.some(d => d.key === k);
+  if (pr.dataset.tab !== active || pr.dataset.n !== String(opts.length)) { pr.innerHTML = html; pc.innerHTML = html; pr.dataset.tab = active; pr.dataset.n = opts.length; }
+  pr.value = has(st.pivR) ? st.pivR : has(def.pivot[0]) ? def.pivot[0] : opts[0].key;
+  pc.value = has(st.pivC) ? st.pivC : has(def.pivot[1]) ? def.pivot[1] : opts[1 % opts.length].key;
+}
+document.getElementById("pivR").onchange = e => { tabState(active).pivR = e.target.value; render(); };
+document.getElementById("pivC").onchange = e => { tabState(active).pivC = e.target.value; render(); };
+function renderHeat(pass) {
+  fillPivotSelects();
+  const st = tabState(active), { V, ORDER } = T[active];
+  const rk = document.getElementById("pivR").value, ck = document.getElementById("pivC").value;
+  const m = new Map(), rowTot = new Map(), colTot = new Map();
+  pass.forEach(r => {
+    const w = weight(st, r);
+    V[rk][r.i].forEach(a => V[ck][r.i].forEach(b => {
+      if (!m.has(a)) m.set(a, new Map());
+      m.get(a).set(b, (m.get(a).get(b) || 0) + w);
+    }));
+    V[rk][r.i].forEach(a => rowTot.set(a, (rowTot.get(a) || 0) + w));
+    V[ck][r.i].forEach(b => colTot.set(b, (colTot.get(b) || 0) + w));
+  });
+  const rows = [...m.keys()].sort((a, b) => rowTot.get(b) - rowTot.get(a)).slice(0, 40);
+  const colKind = T[active].DIMS.find(d => d.key === ck);
+  let cols = ORDER[ck].filter(v => colTot.has(v));
+  if (!colKind.order) cols.sort((a, b) => colTot.get(b) - colTot.get(a));
+  const moreCols = cols.length > 24 ? cols.length - 24 : 0; cols = cols.slice(0, 24);
+  let max = 1; rows.forEach(v => cols.forEach(c => max = Math.max(max, m.get(v).get(c) || 0)));
+  const dark = document.documentElement.dataset.theme === "dark";
+  let h = `<table><tr><th></th>${cols.map(c => `<th class="ch" data-c="${esc(c)}" title="${esc(c)}">${esc(c)}</th>`).join("")}<th>Total</th></tr>`;
+  rows.forEach(v => {
+    h += `<tr><th class="rl" data-v="${esc(v)}" title="${esc(v)}">${esc(v)}</th>`;
+    cols.forEach(c => {
+      const n = m.get(v).get(c) || 0;
+      if (!n) { h += `<td class="z">·</td>`; return; }
+      const step = Math.min(6, Math.floor(7 * Math.log1p(n) / Math.log1p(max) - 1e-9));
+      const ink = dark ? (step >= 4 ? "#0b0b0b" : "#ffffff") : (step >= 3 ? "#ffffff" : "#0b0b0b");
+      h += `<td data-v="${esc(v)}" data-c="${esc(c)}" data-n="${n}" style="background:${SEQ[step]};color:${ink}">${fmt(n)}</td>`;
+    });
+    h += `<td class="tot">${fmt(rowTot.get(v))}</td></tr>`;
+  });
+  const total = pass.reduce((a, r) => a + weight(st, r), 0);
+  h += `<tr><th class="rl" style="cursor:default">Total</th>${cols.map(c => `<td class="tot">${fmt(colTot.get(c))}</td>`).join("")}<td class="tot">${fmt(total)}</td></tr></table>`;
+  if (m.size > rows.length || moreCols) h += `<div class="sub" style="margin-top:6px">Showing top ${rows.length} of ${m.size} rows${moreCols ? ` and top 24 columns (${moreCols} more)` : ""}.</div>`;
+  if (!pass.length) h = '<div class="sub">Nothing matches the current filters.</div>';
+  const el = document.getElementById("heat"); el.innerHTML = h;
+  const rl = T[active].DIMS.find(d => d.key === rk).label, cl = colKind.label;
+  el.querySelectorAll("td[data-v]").forEach(td => {
+    hover(td, () => `<b>${esc(td.dataset.v)}</b> · ${esc(td.dataset.c)}<br>${fmt(+td.dataset.n)} ${st.measure === "units" ? "units" : active.toLowerCase()}<br><span class="t">${esc(rl)} × ${esc(cl)}</span>`);
+    td.onclick = () => { st.filters.set(rk, new Set([td.dataset.v])); st.filters.set(ck, new Set([td.dataset.c])); st.page = 0; render(); };
+  });
+  el.querySelectorAll("th[data-v]").forEach(th => th.onclick = () => toggle(rk, th.dataset.v, true));
+  el.querySelectorAll("th[data-c]").forEach(th => th.onclick = () => toggle(ck, th.dataset.c, true));
+}
+
+// ======================= table =======================
+const PAGE = 100;
+const cellText = (r, k) => Array.isArray(r[k]) ? r[k].join("; ") : r[k] ?? "";
+function sorted(pass) {
+  const st = tabState(active), k = st.sortKey;
+  return pass.slice().sort((a, b) => {
+    let x = a[k], y = b[k];
+    if (k === "toNext") { x = x < 0 ? Infinity : x; y = y < 0 ? Infinity : y; }
+    if (Array.isArray(x)) { x = x.join(); y = y.join(); }
+    if (x == null) x = -Infinity; if (y == null) y = -Infinity;
+    return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) * st.sortDir || a.name.localeCompare(b.name);
+  });
+}
+let current = [];
+function renderTable(pass) {
+  const st = tabState(active), cols = T[active].def.cols;
+  if (!cols.some(c => c[0] === st.sortKey)) { st.sortKey = "name"; st.sortDir = 1; }
+  current = sorted(pass);
+  const pages = Math.max(1, Math.ceil(current.length / PAGE)); st.page = Math.min(st.page, pages - 1);
+  document.getElementById("tcount").textContent = `${fmt(current.length)} ${current.length === 1 ? active.replace(/s$/, "") : active.toLowerCase()}`;
+  document.getElementById("page").textContent = `page ${st.page + 1} / ${pages}`;
+  let h = "<tr>" + cols.map(([k, l, num]) => `<th data-k="${k}" class="${num ? "num" : ""}">${l}${k === st.sortKey ? (st.sortDir > 0 ? " ▲" : " ▼") : ""}</th>`).join("") + "</tr>";
+  current.slice(st.page * PAGE, (st.page + 1) * PAGE).forEach(r => {
+    h += `<tr class="click" data-uid="${esc(r.uid)}">` + cols.map(([k, , num]) => {
+      let v = r[k];
+      if (k === "toNext") v = v < 0 ? "max" : fmt(v);
+      else if (typeof v === "number") v = k === "id" ? v : fmt(v);
+      else if (v == null) v = "";
+      else if (Array.isArray(v)) v = v.map(x => `<span class="pill">${esc(x)}</span>`).join("");
+      else if (k === "working") v = v === "Working" ? '<span class="ok">Working</span>' : "Idle";
+      else if (k === "group" && r.e.g == null) v = `<span class="sub">${esc(v)}</span>`;
+      else v = esc(v);
+      return `<td class="${num ? "num" : ""}" title="${esc(cellText(r, k))}">${v}</td>`;
+    }).join("") + "</tr>";
+  });
+  const t = document.getElementById("tbl"); t.innerHTML = h;
+  t.querySelectorAll("th").forEach(th => th.onclick = () => {
+    const k = th.dataset.k; if (st.sortKey === k) st.sortDir = -st.sortDir; else { st.sortKey = k; st.sortDir = typeof (current[0] || {})[k] === "number" ? -1 : 1; }
+    st.page = 0; render();
+  });
+  t.querySelectorAll("tr[data-uid]").forEach(tr => tr.onclick = () => openDrawer(tr.dataset.uid));
+}
+document.getElementById("prev").onclick = () => { const st = tabState(active); if (st.page > 0) { st.page--; render(); } };
+document.getElementById("next").onclick = () => { tabState(active).page++; render(); };
+document.getElementById("measure").onchange = e => { tabState(active).measure = e.target.value; render(); };
+document.getElementById("export").onclick = () => {
+  const cols = [...T[active].def.cols, ["uid", "uid"], ["holder", "Holder"], ["top", "Top-level holder"], ["dgroup", "Counts toward group"], ["pos", "Doctrine position"], ["loRow", "Loadout line"]]
+    .filter((c, i, a) => a.findIndex(x => x[0] === c[0]) === i);
+  downloadCSV(`${active.toLowerCase()}_selection_${current.length}.csv`, [cols.map(c => c[1]), ...current.map(r => cols.map(([k]) => k === "toNext" && r.toNext < 0 ? "max" : cellText(r, k)))]);
+};
+document.getElementById("copyIds").onclick = async e => {
+  await navigator.clipboard.writeText(current.map(r => r.id).join("\n"));
+  e.target.textContent = `Copied ${fmt(current.length)}`; setTimeout(() => e.target.textContent = "Copy IDs", 1500);
+};
+function downloadCSV(name, rows) {
+  const q = s => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + rows.map(r => r.map(q).join(",")).join("\r\n")], { type: "text/csv" }));
+  a.download = name; a.click();
+}
+
+// ======================= detail drawer: the full chain up, and everything inside =======================
+const drawer = document.getElementById("drawer");
+function closeDrawer() { drawer.classList.remove("on"); }
+addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+function entLink(e, text) { return `<a class="lnk" data-uid="${esc(e.uid)}">${esc(text ?? e.label)}</a>`; }
+function openDrawer(uid) {
+  const e = M.E.get(uid); if (!e) return;
+  const chain = []; for (let a = e.p; a; a = a.p) chain.unshift(a);
+  const root = chain[0] || e;
+  const outer = root.p ? null : `${esc(root.ptype ? (root.ptype.replace(/s$/, "") + ": ") : "")}${esc(root.pname || "?")}`;
+  const crumbs = [outer ? `<span>${outer}</span>` : "", ...chain.map(a => entLink(a)), `<b>${esc(e.label)}</b>`].filter(Boolean).join(" › ");
+  const g = e.g && M.G.get(e.g);
+  const kv = [["Type", `${esc(e.type)}${e.cls ? ` <span class="sub">· ${esc(e.cls)}</span>` : ""}`], ["ID / uid", `${esc(e.id)} <span class="sub">· ${esc(e.uid)}</span>`],
+    ["Group", e.g ? `<b>${esc(e.g)}</b> <span class="sub">· ${esc(e.gsrc)}</span>` : `<span class="sub">unassigned</span>`]];
+  if (e.dg !== e.g) kv.push(["Counts toward", `${esc(e.dg)} <span class="sub">(flagship of a group that belongs to it)</span>`]);
+  if (e.labelG && e.labelG !== e.g) kv.push(["Name label says", `<span class="warn">${esc(e.labelG)}</span>`]);
+  if (g && g.flagship && g.flagship !== e) kv.push(["Group flagship", entLink(g.flagship)]);
+  if (e.posKey) kv.push(["Doctrine position", esc(e.posKey)]);
+  if (e.row >= 0) kv.push(["Loadout line", `${esc(L.rows[e.row].name)}${e.qty !== 1 ? ` <span class="sub">· ${fmt(e.qty)} units</span>` : ""}`]);
+  if (e.type === "Cargo Container") kv.push(["Contents", `${esc(e.content)} × ${fmt(e.qty)}`]);
+  kv.push(["Location", esc(e.loc)]);
+  kv.push(["Physically", `${esc(e.place)}${e.pg && e.pg !== e.g ? ` <span class="sub">· inside ${esc(e.pg)}</span>` : ""}`]);
+  if (e.aboard) kv.push(["Aboard", esc(e.aboard)]);
+  const rec = e.rec, add = (k, v) => { if (blank(v)) kv.push([k, esc(v)]); };
+  if (e.et === "NPCs") { kv.push(["Level / XP", `${esc(rec.XPLevel)} · ${fmt(+rec.XP || 0)} XP`]); add("HP", rec.HPmax ? `${rec.HP}/${rec.HPmax}` : ""); add("Supervisor", rec.pilot_name); add("Working", rec.isWorking === "1" ? "Working" : ""); }
+  if (+rec.hullMax) kv.push(["Hull / shield / ionic", `${fmt(+rec.hull)}/${fmt(+rec.hullMax)} · ${fmt(+rec.shield || 0)}/${fmt(+rec.shieldMax || 0)} · ${fmt(+rec.ionic || 0)}/${fmt(+rec.ionicMax || 0)}`]);
+  if (+rec.passengersTotal) kv.push(["Passengers", `${fmt(+rec.passengersTotal - (+rec.passengersRemaining || 0))} / ${fmt(+rec.passengersTotal)}`]);
+  if (+rec.volumeCapacityTotal) kv.push(["Volume used", `${fmt(+rec.volumeCapacityTotal - (+rec.volumeCapacityRemaining || 0))} / ${fmt(+rec.volumeCapacityTotal)}`]);
+  add("Equipped", rec.equipped); add("Commander", rec.commander_name); if (e.et !== "NPCs") add("Pilot / operator", rec.pilot_name);
+  add("Info text", e.info); add("Tags", e.tagsRaw.join("; ")); add("Owner", rec.owner_name);
+  kv.push(["From file", esc(e.src.path || e.src.name)]);
+
+  let h = `<button class="close x" title="Close (Esc)">✕</button><div class="sub">${esc(e.et.replace(/s$/, ""))}</div><h2>${esc(e.name)}</h2>
+    <div class="crumbs">${crumbs}</div><h3>Details</h3><div class="kv">${kv.map(([k, v]) => `<div class="k">${k}</div><div class="v">${v}</div>`).join("")}</div>`;
+  if (e.kids.length) {
+    const all = [...descendants(e)].map(u => M.E.get(u));
+    const byEt = new Map(); all.forEach(k => byEt.set(k.et, (byEt.get(k.et) || 0) + 1));
+    h += `<h3>Inside — ${fmt(e.kids.length)} directly, ${fmt(all.length)} in total</h3><div class="btns">` +
+      ET_LIST.filter(et => byEt.get(et)).map(et => `<button data-inside="${et}">${fmt(byEt.get(et))} ${et.toLowerCase()} →</button>`).join("") + `</div>`;
+    // direct contents grouped by kind + type; each group expands to its records
+    const groups = new Map();
+    e.kids.forEach(k => { const key = `${k.et}|${k.type === "Cargo Container" ? "Cargo: " + k.content : k.type}`; (groups.get(key) || groups.set(key, []).get(key)).push(k); });
+    h += `<h3>Directly inside</h3><div class="tree">` + [...groups].sort((a, b) => ET_LIST.indexOf(a[0].split("|")[0]) - ET_LIST.indexOf(b[0].split("|")[0]) || b[1].length - a[1].length).map(([key, ks], gi) => {
+      const [et, type] = key.split("|"), units = ks.reduce((s, k) => s + k.qty, 0), sub = ks.reduce((s, k) => s + k.n, 0);
+      return `<div class="tg" data-g="${gi}"><span class="sub">▸</span><span>${esc(type)} <span class="sub">· ${et.replace(/s$/, "").toLowerCase()}${sub ? ` · ${fmt(sub)} inside them` : ""}</span></span><span class="n">${fmt(ks.length)}${units !== ks.length ? ` <span class="sub">(${fmt(units)} units)</span>` : ""}</span></div>
+        <div class="tl" data-gl="${gi}" hidden>${ks.slice(0, 300).map(k => `<div>${entLink(k)}<span>${k.n ? fmt(k.n) + " inside" : ""}${k.g && k.g !== e.g ? ` · ${esc(k.g)}` : ""}</span></div>`).join("")}${ks.length > 300 ? `<div class="sub">+ ${fmt(ks.length - 300)} more — use the buttons above</div>` : ""}</div>`;
+    }).join("") + `</div>`;
+    // everything inside, rolled up against the loadout
+    if (all.length > e.kids.length) {
+      const roll = new Map();
+      all.forEach(k => { const key = `${k.et}|${k.row >= 0 ? L.rows[k.row].name : (k.type === "Cargo Container" ? "Cargo: " + k.content : k.type)}`; const o = roll.get(key) || roll.set(key, { n: 0, u: 0 }).get(key); o.n++; o.u += k.qty; });
+      h += `<h3>Everything inside, by type</h3><div class="tablewrap"><table class="data"><tr><th>Kind</th><th>Type / loadout line</th><th class="num">Records</th><th class="num">Units</th></tr>` +
+        [...roll].sort((a, b) => ET_LIST.indexOf(a[0].split("|")[0]) - ET_LIST.indexOf(b[0].split("|")[0]) || b[1].u - a[1].u).map(([k, o]) => {
+          const [et, t] = k.split("|"); return `<tr><td>${et}</td><td title="${esc(t)}">${esc(t)}</td><td class="num">${fmt(o.n)}</td><td class="num">${fmt(o.u)}</td></tr>`;
+        }).join("") + `</table></div>`;
+    }
+  }
+  h += `<details style="margin-top:14px"><summary class="sub" style="cursor:pointer">All export fields</summary><div class="kv" style="margin-top:6px">` +
+    Object.entries(rec).filter(([, v]) => blank(v)).map(([k, v]) => `<div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>`).join("") + `</div></details>`;
+  drawer.innerHTML = h; drawer.classList.add("on"); drawer.scrollTop = 0;
+  drawer.querySelector(".close").onclick = closeDrawer;
+  drawer.querySelectorAll("a[data-uid]").forEach(a => a.onclick = () => openDrawer(a.dataset.uid));
+  drawer.querySelectorAll("button[data-inside]").forEach(b => b.onclick = () => { openTab(b.dataset.inside, {}, e); });
+  drawer.querySelectorAll(".tg").forEach(tg => tg.onclick = () => {
+    const l = drawer.querySelector(`[data-gl="${tg.dataset.g}"]`); l.hidden = !l.hidden; tg.firstElementChild.textContent = l.hidden ? "▸" : "▾";
+  });
+}
+
+// ======================= loadout check tab =======================
+let lSel = null;   // selected requisition line
+function renderLoadout() {
+  const host = document.getElementById("loadout");
+  if (!L || !REQ) { document.getElementById("lTiles").innerHTML = '<div class="card">No Equipment loadout available — drop Equipment loadout.xlsx.</div>'; return; }
+  const P = L.positions, { rows, mapped, unfilled } = REQ;
+  // tiles
+  const short = rows.filter(x => x.net > 0);
+  const byCat = c => short.filter(x => x.cat === c).reduce((s, x) => s + x.net, 0);
+  const unf = P.map((p, i) => unfilled[i] ? `${p.key} ×${unfilled[i]}` : "").filter(Boolean);
+  const T2 = [["Lines to requisition", fmt(short.length), `of ${fmt(rows.filter(x => x.required).length)} lines with an allocation`],
+    ["Ships", fmt(byCat("Ships")), "net to requisition"], ["Vehicles", fmt(byCat("Vehicles")), "net to requisition"],
+    ["NPCs", fmt(byCat("NPCs")), "net to requisition"], ["Items", fmt(byCat("Items")), "units, net to requisition"], ["Droids", fmt(byCat("Droids")), "net to requisition"],
+    ["Groups in scope", fmt(mapped.length), `${fmt([...M.G.values()].filter(g => g.kind === "tag" && g.pos < 0).length)} groups have no position` + (REQ.excluded.length ? ` · ${REQ.excluded.length} filtered out` : "")],
+    ["Unfilled positions", fmt(unfilled.reduce((a, b) => a + b, 0)), unf.join(" · ") || "every TF position has a group"]];
+  document.getElementById("lTiles").innerHTML = T2.map(([k, v, d]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d" title="${esc(d)}">${esc(d)}</div></div>`).join("");
+  document.getElementById("lSub").textContent = `loadout: ${L.name}`;
+  const cats = [...new Set(rows.map(x => x.cat))];
+  const lc = document.getElementById("lCat"), keep = lc.value;
+  lc.innerHTML = `<option value="">all categories</option>` + cats.map(c => `<option>${c}</option>`).join(""); lc.value = cats.includes(keep) ? keep : "";
+  document.getElementById("lSurplus").checked = S.useSurplus;
+  document.getElementById("lCountBy").value = S.countBy === "physical" ? "physical" : "assigned";
+  document.getElementById("lExBn").checked = !!S.exBattalion;
+  document.getElementById("lOnlyOff").checked = !!S.onlyOfficer;
+  const ex = REQ.excluded;
+  document.getElementById("lScopeSub").textContent = (S.countBy === "physical"
+    ? "Records count toward the group whose flagship they are inside; detached ones count as unassigned. " : "")
+    + (ex.length ? `${plural(ex.length, "group")} left out (their requirement and holdings): ${ex.map(g => g.name).join(", ")}` : "");
+  renderReqTable(); renderBreakdown(); renderMatrix(); renderPosTable(); renderGroupTable(); renderTypeTable(); renderCargoTable();
+}
+const lFilter = () => {
+  const cat = document.getElementById("lCat").value, q = document.getElementById("lQ").value.trim().toLowerCase(), only = document.getElementById("lOnlyShort").checked;
+  return REQ.rows.filter(x => (!cat || x.cat === cat) && (!q || x.name.toLowerCase().includes(q)) && (only ? x.short > 0 || x.net > 0 : x.required || x.total));
+};
+let lSort = { k: "order", d: 1 };
+const L_COLS = [["cat", "Category"], ["name", "Loadout line"], ["required", "Required", 1], ["held", "Held in groups", 1], ["short", "Group shortfall", 1],
+  ["surplus", "Group surplus", 1], ["reserve", "Reserve", 1], ["unassigned", "Unassigned", 1], ["unmapped", "In groups w/o position", 1],
+  ["moves", "Cover by moving stock", 1], ["net", "Net to requisition", 1],
+  ["total", "Total owned", 1], ["schedule", "Sheet schedule", 1]];
+function renderReqTable() {
+  const CAT_ORDER = ["Ships", "Vehicles", "NPCs", "Items", "Droids"];
+  const xs = lFilter().sort((a, b) => lSort.k === "order" ? (CAT_ORDER.indexOf(a.cat) - CAT_ORDER.indexOf(b.cat) || a.i - b.i)
+    : ((typeof a[lSort.k] === "number" ? (a[lSort.k] ?? -1) - (b[lSort.k] ?? -1) : String(a[lSort.k]).localeCompare(String(b[lSort.k]))) * lSort.d || a.i - b.i));
+  let h = "<tr>" + L_COLS.map(([k, l, n]) => `<th data-k="${k}" class="${n ? "num" : ""}">${l}${lSort.k === k ? (lSort.d > 0 ? " ▲" : " ▼") : ""}</th>`).join("") + "</tr>";
+  let lastCat = null;
+  xs.forEach(x => {
+    if (lSort.k === "order" && x.cat !== lastCat) { h += `<tr class="sect"><td colspan="${L_COLS.length}">${esc(x.cat)}</td></tr>`; lastCat = x.cat; }
+    const td = (v, cls = "") => `<td class="num ${cls}">${v == null ? "" : v ? fmt(v) : '<span class="sub">0</span>'}</td>`;
+    h += `<tr class="click${lSel === x.i ? " selrow" : ""}" data-i="${x.i}"><td>${esc(x.cat)}</td><td title="${esc(x.name)}">${esc(x.name)}</td>${td(x.required)}${td(x.held)}${td(x.short, x.short ? "short" : "")}
+      ${td(x.surplus, x.surplus ? "over" : "")}${td(x.reserve)}${td(x.unassigned)}${td(x.unmapped)}${td(x.moves)}${td(x.net, x.net ? "short" : "")}${td(x.total)}${td(x.schedule)}</tr>`;
+  });
+  if (!xs.length) h += `<tr><td colspan="${L_COLS.length}" class="sub">No lines match.</td></tr>`;
+  const t = document.getElementById("lTbl"); t.innerHTML = h;
+  t.querySelectorAll("th").forEach(th => th.onclick = () => {
+    const k = th.dataset.k;   // Category restores the sheet order, grouped by category
+    if (k === "cat") lSort = { k: "order", d: 1 }; else if (lSort.k === k) lSort.d = -lSort.d; else lSort = { k, d: L_COLS.find(c => c[0] === k)[2] ? -1 : 1 };
+    renderReqTable();
+  });
+  t.querySelectorAll("tr[data-i]").forEach(tr => tr.onclick = () => { lSel = lSel === +tr.dataset.i ? null : +tr.dataset.i; renderReqTable(); renderBreakdown(); if (lSel != null) document.getElementById("lBreak").scrollIntoView({ behavior: "smooth", block: "nearest" }); });
+}
+["lCat", "lQ", "lOnlyShort"].forEach(id => document.getElementById(id).addEventListener("input", () => { renderReqTable(); renderMatrix(); }));
+document.getElementById("lSurplus").onchange = e => { S.useSurplus = e.target.checked; saveSettings(); computeReq(); render(); };
+document.getElementById("lCountBy").onchange = e => { S.countBy = e.target.value; saveSettings(); rebuildMapping(); };
+document.getElementById("lExBn").onchange = e => { S.exBattalion = e.target.checked; saveSettings(); rebuildMapping(); };
+document.getElementById("lOnlyOff").onchange = e => { S.onlyOfficer = e.target.checked; saveSettings(); rebuildMapping(); };
+document.getElementById("lExport").onclick = () => {
+  const xs = lFilter();
+  downloadCSV(`requisition_${xs.length}_lines.csv`, [L_COLS.map(c => c[1]).concat(["Unfilled-position share"]), ...xs.map(x => L_COLS.map(([k]) => x[k]).concat([x.unfilledReq]))]);
+};
+
+function groupFilterFor(x, gname) {   // open the records behind one matrix / breakdown cell
+  const keysForRow = [...M.keys.values()].filter(k => k.row === x.i);
+  const et = (keysForRow.find(k => !k.cargo) || keysForRow[0] || { et: x.cat }).et;
+  if (!T[et]?.R.length) return;
+  const f = { loRow: x.name };
+  if (gname) f.dgroup = gname;
+  openTab(et, f);
+}
+function renderBreakdown() {
+  const el = document.getElementById("lBreak");
+  const x = REQ.rows[lSel];
+  if (!x) { el.hidden = true; return; }
+  el.hidden = false;
+  const lines = REQ.mapped.map(g => ({ g, c: x.cells.get(g.name) })).filter(o => o.c.req || o.c.held);
+  let h = `<div class="tbar"><h2>${esc(x.name)}</h2><span class="sub">${esc(x.cat)} · required ${fmt(x.required)} · held in groups ${fmt(x.held)} · net to requisition <b class="${x.net ? "bad" : "ok"}">${fmt(x.net)}</b></span><div class="grow"></div>
+    <button id="bAll">Show all records →</button><button class="x" id="bClose">✕</button></div>
+    <div class="tablewrap tall"><table class="data"><tr><th>Group</th><th>Position</th><th>Flagship location</th><th class="num">Required</th><th class="num">Held</th><th class="num">Difference</th></tr>`;
+  lines.sort((a, b) => (a.c.held - a.c.req) - (b.c.held - b.c.req)).forEach(({ g, c }) => {
+    const d = c.held - c.req;
+    h += `<tr class="click" data-g="${esc(g.name)}"><td>${esc(g.name)}</td><td>${esc(L.positions[g.pos].key)}${g.mult > 1 ? ` ×${g.mult}` : ""}</td><td>${g.flagship ? esc(g.flagship.loc) : ""}</td>
+      <td class="num">${fmt(c.req)}</td><td class="num">${fmt(c.held)}</td><td class="num ${d < 0 ? "short" : d > 0 ? "over" : ""}">${d > 0 ? "+" : ""}${fmt(d)}</td></tr>`;
+  });
+  REQ.unfilled.forEach((u, i) => { if (u && x.r.alloc[i]) h += `<tr><td class="sub">${u} unfilled ${esc(L.positions[i].key)} position${u > 1 ? "s" : ""}</td><td>${esc(L.positions[i].key)}</td><td></td><td class="num">${fmt(u * x.r.alloc[i])}</td><td class="num">0</td><td class="num short">−${fmt(u * x.r.alloc[i])}</td></tr>`; });
+  const extra = [[RESERVE, x.reserve], [UNASSIGNED, x.unassigned], ...[...x.unmappedBy].map(([g, v]) => [g + " (no position)", v, g])];
+  extra.forEach(([g, v, real]) => { if (v) h += `<tr class="click" data-g="${esc(real || g)}"><td>${esc(g)}</td><td class="sub">—</td><td></td><td></td><td class="num">${fmt(v)}</td><td class="num over">available</td></tr>`; });
+  h += `</table></div>`;
+  el.innerHTML = h;
+  el.querySelector("#bClose").onclick = () => { lSel = null; renderReqTable(); renderBreakdown(); };
+  el.querySelector("#bAll").onclick = () => groupFilterFor(x, null);
+  el.querySelectorAll("tr[data-g]").forEach(tr => tr.onclick = () => groupFilterFor(x, tr.dataset.g));
+}
+
+function renderMatrix() {
+  const by = document.getElementById("mxBy").value, P = L.positions;
+  const xs = lFilter().filter(x => x.required || x.total);
+  let colsDef;
+  if (by === "pos") colsDef = P.map((p, i) => ({ key: p.key, label: p.key + (REQ.unfilled[i] ? ` (+${REQ.unfilled[i]} unfilled)` : ""), pos: i }))
+    .filter(c => REQ.mapped.some(g => g.pos === c.pos) || REQ.unfilled[c.pos]);
+  else colsDef = REQ.mapped.map(g => ({ key: g.name, label: g.name, g, pos: g.pos }));
+  colsDef.push({ key: RESERVE, label: "Reserve", special: "reserve" }, { key: UNASSIGNED, label: "Unassigned", special: "un" });
+  const cell = (x, c) => {
+    if (c.special === "reserve") return { held: x.reserve, req: 0 };
+    if (c.special === "un") return { held: x.unassigned, req: 0 };
+    if (c.g) return x.cells.get(c.g.name);
+    let held = 0, req = 0; REQ.mapped.forEach(g => { if (g.pos === c.pos) { const o = x.cells.get(g.name); held += o.held; req += o.req; } });
+    return { held, req: req + REQ.unfilled[c.pos] * x.r.alloc[c.pos] };
+  };
+  let h = `<table><thead><tr><th class="rl">Loadout line</th>${colsDef.map(c => `<th class="vert" data-c="${esc(c.key)}" title="${esc(c.label)}">${esc(c.label)}</th>`).join("")}</tr></thead><tbody>`;
+  xs.forEach(x => {
+    h += `<tr><th class="rl" title="${esc(x.name)}">${esc(x.name)}</th>`;
+    colsDef.forEach((c, ci) => {
+      const { held, req } = cell(x, c);
+      if (!held && !req) { h += `<td class="e">·</td>`; return; }
+      const cls = c.special ? "r" : !req ? "r" : held < req ? "s" : held > req ? "o" : "k";
+      h += `<td class="${cls}" data-i="${x.i}" data-ci="${ci}">${c.special || !req ? fmt(held) : `${fmt(held)}/${fmt(req)}`}</td>`;
+    });
+    h += `</tr>`;
+  });
+  h += `</tbody></table>`;
+  if (!xs.length) h = '<div class="sub">No lines match the filters above.</div>';
+  const el = document.getElementById("mx"); el.innerHTML = h;
+  el.querySelectorAll("td[data-i]").forEach(td => {
+    const x = REQ.rows[+td.dataset.i], c = colsDef[+td.dataset.ci];
+    hover(td, () => { const { held, req } = cell(x, c); return `<b>${esc(x.name)}</b><br>${esc(c.label)}<br>held ${fmt(held)}${req ? ` · required ${fmt(req)} · <b>${held >= req ? "+" : ""}${fmt(held - req)}</b>` : ""}`; });
+    td.onclick = () => {
+      if (c.special) return groupFilterFor(x, c.key);
+      if (c.g) return groupFilterFor(x, c.g.name);
+      const keysForRow = [...M.keys.values()].filter(k => k.row === x.i);
+      const et = (keysForRow.find(k => !k.cargo) || keysForRow[0] || { et: x.cat }).et;
+      if (T[et]?.R.length) openTab(et, { loRow: x.name, pos: c.key });
+    };
+  });
+  el.querySelectorAll("th[data-c]").forEach(th => th.onclick = () => {
+    const c = colsDef.find(c => c.key === th.dataset.c);
+    if (c.g?.flagship) openDrawer(c.g.flagship.uid);
+  });
+}
+document.getElementById("mxBy").onchange = renderMatrix;
+
+// ---- mapping tables
+function markChanged(el, isDefault) { el.classList.toggle("changed", !isDefault); }
+function renderPosTable() {
+  const P = L.positions;
+  document.getElementById("dPosSub").textContent = `${P.length} positions in the loadout · ${L.tfCount} Task Force assignments`;
+  let h = `<p class="note">Each loadout column is a doctrine position. The Task Force quantity says how many of that position the TF should field; positions with fewer
+    groups than that are counted as <b>unfilled</b> and their whole allocation is required. Quantities come from the sheet and can be overridden here (blue border = changed).</p>
+    <div class="tablewrap"><table class="data"><tr><th>Position (column)</th><th>TF assignment label</th><th class="num">TF quantity</th><th class="num">Groups mapped</th><th class="num">Unfilled</th><th>Groups</th></tr>`;
+  P.forEach((p, i) => {
+    const gs = REQ.mapped.filter(g => g.pos === i);
+    const over = p.tfQty != null && REQ.slots[i] > p.tfQty;
+    h += `<tr><td>${esc(p.key)}</td><td>${p.tf ? esc(p.tf.label) : '<span class="sub">— none (not in the TF schedule)</span>'}</td>
+      <td class="num"><input class="cell" type="number" min="0" data-p="${esc(p.key)}" value="${p.tfQty ?? ""}" placeholder="—"></td>
+      <td class="num ${over ? "over" : ""}" title="${over ? "more groups than the TF quantity" : ""}">${fmt(REQ.slots[i])}</td><td class="num ${REQ.unfilled[i] ? "short" : ""}">${REQ.unfilled[i] ? fmt(REQ.unfilled[i]) : ""}</td>
+      <td title="${esc(gs.map(g => g.name).join(", "))}">${gs.map(g => `<span class="pill">${esc(g.name)}</span>`).join("")}</td></tr>`;
+  });
+  h += `</table></div>`;
+  const el = document.getElementById("posBody"); el.innerHTML = h;
+  el.querySelectorAll("input[data-p]").forEach(inp => {
+    const p = P.find(p => p.key === inp.dataset.p); markChanged(inp, S.tf[p.key] == null);
+    inp.onchange = () => { const v = inp.value.trim(); if (v === "" || (p.tf && +v === p.tf.qty)) delete S.tf[p.key]; else S.tf[p.key] = Math.max(0, +v); saveSettings(); rebuildMapping(); };
+  });
+}
+function renderGroupTable() {
+  const P = L.positions, gs = [...M.G.values()].sort((a, b) => (a.pos < 0) - (b.pos < 0) || a.pos - b.pos || a.name.localeCompare(b.name));
+  document.getElementById("dGroupsSub").textContent = `${gs.filter(g => g.pos >= 0).length} of ${gs.length} groups mapped`;
+  const opts = `<option value="">— no position (holdings count as "in groups w/o position")</option>` + P.map(p => `<option value="${esc(p.key)}">${esc(p.key)}</option>`).join("");
+  let h = `<p class="note">Groups come from the <b>XXX Name</b> tags. A group's position defaults from its prefix (ISD → ISD, CKI → Carr/I, CNA → Corona, CRV → CR-90a,
+    DPC → DP20C, RDR → RAIDR, LCR → Lancer, NEB → NebB, TCB → MIX Bn). A group whose flagship is also tagged with another group (e.g. CRV Prodigy carried by the SSD)
+    becomes its child: the flagship counts toward the parent's allocation, and if the loadout has a combined column (<i>SSD - CR90A</i>) the child uses it —
+    otherwise (DPC Pike) it gets no position of its own, as the parent's column already covers it.
+    Items held by players with no group label make up <i>${esc(OFFICERS)}</i>, sized by the Officer TF quantity.</p>
+    <div class="tablewrap tall"><table class="data"><tr><th>Group</th><th class="num">Records</th><th>Flagship</th><th>Location</th><th>Officer</th><th>Parent group</th><th>Doctrine position</th><th>Spellings folded in</th></tr>`;
+  gs.forEach(g => {
+    if (g.kind === "reserve") { h += `<tr><td><b>${esc(g.name)}</b></td><td class="num">${fmt(g.n)}</td><td colspan="6" class="sub">reserve pool — available to cover shortfalls</td></tr>`; return; }
+    h += `<tr><td>${g.flagship ? entLink(g.flagship, g.name) : esc(g.name)}${g.excluded ? ' <span class="pill">out of scope</span>' : ""}</td><td class="num">${fmt(g.n)}</td><td>${g.flagship ? esc(g.flagship.type) : '<span class="sub">no flagship ship</span>'}</td>
+      <td>${g.flagship ? esc(g.flagship.loc) : ""}</td><td>${g.officer ? esc(g.officer) : g.kind === "tag" ? '<span class="sub">none</span>' : ""}</td><td>${esc(g.parent || "")}</td>
+      <td><select class="map" data-g="${esc(g.name)}">${opts}</select></td><td class="sub">${esc(g.variants.join(", "))}</td></tr>`;
+  });
+  h += `</table></div>`;
+  const el = document.getElementById("groupBody"); el.innerHTML = h;
+  el.querySelectorAll("a[data-uid]").forEach(a => a.onclick = () => openDrawer(a.dataset.uid));
+  el.querySelectorAll("select[data-g]").forEach(sel => {
+    const g = M.G.get(sel.dataset.g); sel.value = g.pos >= 0 ? P[g.pos].key : ""; markChanged(sel, S.groupPos[g.name] === undefined);
+    sel.onchange = () => { const def = g.defPos >= 0 ? P[g.defPos].key : ""; if (sel.value === def) delete S.groupPos[g.name]; else S.groupPos[g.name] = sel.value; saveSettings(); rebuildMapping(); };
+  });
+}
+function renderTypeTable() {
+  const ks = [...M.keys.values()].sort((a, b) => ET_LIST.indexOf(a.et) - ET_LIST.indexOf(b.et) || (a.row < 0) - (b.row < 0) || b.units - a.units);
+  const unmatchedRows = L.rows.filter((r, i) => !ks.some(k => k.row === i));
+  document.getElementById("dTypesSub").textContent = `${ks.filter(k => k.row >= 0).length} of ${ks.length} inventory types matched · ${unmatchedRows.length} loadout lines with nothing in inventory`;
+  document.getElementById("dlRows").innerHTML = L.rows.map(r => `<option value="${esc(r.name)}">`).join("");
+  let h = `<p class="note">How each inventory type counts against the loadout. Names are matched ignoring spacing, case, "class/series" and plurals, plus a few known
+    aliases (Remote → Training Remote, Battle Armour → Battle Armour - Navy Custom…). NPCs are split into Marines (branch tag or info text says Marine) and everyone else.
+    Type a loadout line to override, or clear the box to leave a type out of the check.</p>
+    <div class="tablewrap tall"><table class="data"><tr><th>Kind</th><th>Inventory type</th><th class="num">Records</th><th class="num">Units</th><th>Loadout line</th><th>Auto-match</th></tr>`;
+  ks.forEach(k => {
+    const label = k.et === "NPCs" ? `${k.type} · ${k.variant}` : k.type;
+    h += `<tr><td>${esc(k.et)}</td><td title="${esc(label)}">${esc(label)}${k.cargo ? ' <span class="pill">incl. cargo</span>' : ""}</td><td class="num">${fmt(k.records)}</td><td class="num">${fmt(k.units)}</td>
+      <td><input class="map" list="dlRows" data-k="${esc(k.key)}" value="${k.row >= 0 ? esc(L.rows[k.row].name) : ""}" placeholder="(not in loadout)"></td>
+      <td class="sub">${k.auto >= 0 ? esc(L.rows[k.auto].name) : "—"}</td></tr>`;
+  });
+  h += `</table></div>`;
+  if (unmatchedRows.length) h += `<p class="note"><b>Loadout lines with nothing in inventory:</b> ${unmatchedRows.map(r => `<span class="pill">${esc(r.name)}</span>`).join("")}</p>`;
+  const el = document.getElementById("typeBody"); el.innerHTML = h;
+  el.querySelectorAll("input[data-k]").forEach(inp => {
+    const k = M.keys.get(inp.dataset.k); markChanged(inp, S.typeMap[k.key] === undefined);
+    inp.onchange = () => {
+      const v = inp.value.trim(), auto = k.auto >= 0 ? L.rows[k.auto].name : "";
+      if (v && !L.rows.some(r => r.norm === normType(v))) { inp.setCustomValidity("not a loadout line"); inp.reportValidity(); return; }
+      inp.setCustomValidity("");
+      if (normType(v) === normType(auto)) delete S.typeMap[k.key]; else S.typeMap[k.key] = v;
+      saveSettings(); rebuildMapping();
+    };
+  });
+}
+function renderCargoTable() {
+  const cs = [...M.cargo.values()].sort((a, b) => (!!a.content) - (!!b.content) || b.units - a.units);
+  const unknown = cs.filter(c => !c.content);
+  document.getElementById("dCargoSub").textContent = `${cs.length} distinct container names · ${unknown.length} with unknown contents (${fmt(unknown.reduce((s, c) => s + c.units, 0))} units)`;
+  document.getElementById("dlVocab").innerHTML = M.vocab.map(v => `<option value="${esc(v)}">`).join("");
+  let h = `<p class="note">Cargo containers are stacks: the export only gives the container's <b>name</b> and its <b>uses</b> (= units packed). The contents are guessed from
+    the name (“Reserve: E-11”, “NEB Fidelity: Bacta Refill”, “GSP Tryast: HStick”) — or, for files from <b>swc_sync.py</b>, asked from SWC directly (“from SWC”).
+    Fix any wrong or unknown guess here — it applies to every container with that name.</p>
+    <div class="tablewrap tall"><table class="data"><tr><th>Container name</th><th class="num">Containers</th><th class="num">Units</th><th>Contents</th><th>Guess</th></tr>`;
+  cs.forEach(c => {
+    h += `<tr><td title="${esc(c.name)}">${esc(c.name)}</td><td class="num">${fmt(c.records)}</td><td class="num">${fmt(c.units)}</td>
+      <td><input class="map" list="dlVocab" data-c="${esc(c.name)}" value="${esc(c.content)}" placeholder="(unknown — not counted)"></td><td class="sub">${esc(c.guess || "—")}${c.swc ? " (from SWC)" : ""}</td></tr>`;
+  });
+  h += `</table></div>`;
+  const el = document.getElementById("cargoBody"); el.innerHTML = h;
+  el.querySelectorAll("input[data-c]").forEach(inp => {
+    const c = M.cargo.get(inp.dataset.c); markChanged(inp, S.cargoMap[c.name] === undefined);
+    inp.onchange = () => { const v = inp.value.trim(); if (v === c.guess) delete S.cargoMap[c.name]; else S.cargoMap[c.name] = v; saveSettings(); rebuildMapping(); };
+  });
+}
+function rebuildMapping() {
+  const open = ["dPos", "dGroups", "dTypes", "dCargo"].filter(id => document.getElementById(id).open);
+  const y = scrollY;
+  applyLoadout(); computeReq(); buildTabs(); render();
+  open.forEach(id => document.getElementById(id).open = true);
+  scrollTo(0, y);
+}
+
+// ======================= loading controls & startup =======================
+const fileInput = document.getElementById("file"), folderInput = document.getElementById("folder");
+let pickReplace = true;
+const pick = replace => { pickReplace = replace; fileInput.click(); };
+document.getElementById("loadBtn").onclick = () => pick(true);
+document.getElementById("addBtn").onclick = () => pick(false);
+document.getElementById("folderBtn").onclick = () => folderInput.click();
+document.getElementById("drop").onclick = () => pick(true);
+fileInput.onchange = () => { addFiles(fileInput.files, pickReplace); fileInput.value = ""; };
+folderInput.onchange = () => { addFiles(folderInput.files, true); folderInput.value = ""; };
+const overlay = document.getElementById("overlay"); let dragDepth = 0;
+addEventListener("dragenter", e => { if (e.dataTransfer?.types.includes("Files")) { dragDepth++; overlay.classList.add("on"); } });
+addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; overlay.classList.remove("on"); } });
+addEventListener("dragover", e => e.preventDefault());
+addEventListener("drop", async e => { e.preventDefault(); dragDepth = 0; overlay.classList.remove("on"); addFiles(await collectDropped(e.dataTransfer)); });
+
+let qt; document.getElementById("q").oninput = e => { clearTimeout(qt); qt = setTimeout(() => { const st = tabState(active); st.query = e.target.value.trim().toLowerCase(); st.page = 0; render(); }, 150); };
+document.getElementById("reset").onclick = () => { const st = tabState(active); st.filters.clear(); st.query = ""; st.inside = null; st.page = 0; render(); };
+const themeKey = "invExplorerTheme";
+function setTheme(t) { document.documentElement.dataset.theme = t; try { localStorage.setItem(themeKey, t); } catch {} }
+let savedTheme = null; try { savedTheme = localStorage.getItem(themeKey); } catch {}
+setTheme(savedTheme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+document.getElementById("theme").onclick = () => { setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"); if (M?.ents.length) render(); };
+
+const restored = (async () => {   // the sync module waits for this before touching the file set
+  const saved = await DB.all();
+  if (saved && saved.length) {
+    document.getElementById("busy").textContent = `Restoring ${saved.length} previously loaded file(s)…`;
+    for (const s of saved) { await parseSource(s); sources.push(s); }
+    document.getElementById("busy").textContent = "";
+  }
+  rebuild();
+})();
+</script>
+<script type="module">
+// ======================= sign-in + cloud sync (Firebase Auth + Firestore, project research-planner-rik) =======================
+// Firestore's rules let each account read and write only users/<its own uid>/…, so nobody else can read this data.
+//   users/<uid>/invexp/files          { version, files: [{ key, name, path, mtime, size, added, kind, id, chunks, bytes }] }
+//   users/<uid>/invexp/settings       { version, json }   the mapping choices (S)
+//   users/<uid>/invexpChunks/<id>_<n> { data }            each file gzipped and split to stay under Firestore's 1 MiB document limit
+// For testing on localhost only: ?fakesdk=<same-origin folder> swaps in stand-in Firebase modules.
+const fake = location.hostname === "localhost" && new URLSearchParams(location.search).get("fakesdk");
+const SDK = fake && new URL(fake, location.href).origin === location.origin ? new URL(fake, location.href).href.replace(/\/$/, "")
+  : "https://www.gstatic.com/firebasejs/10.14.1";
+const firebaseConfig = {   // not secret: access is controlled by the Firestore rules
+  apiKey: "AIzaSyAgq9J5y1N2yNCXLYdndI9fmavNtIOu-ys",
+  authDomain: "research-planner-rik.firebaseapp.com",
+  projectId: "research-planner-rik",
+  storageBucket: "research-planner-rik.firebasestorage.app",
+  messagingSenderId: "602242473351",
+  appId: "1:602242473351:web:8829166aba631155c7c722",
+};
+const CHUNK = 900 * 1024;
+const acct = document.getElementById("acct"), dlg = document.getElementById("loginDlg");
+let A, F, auth, db, user = null, meta = null, busy = false, again = false, settingsTimer = null, unsubs = [];
+
+const when = v => new Date(v).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+function status(state, text) {
+  if (!user) {
+    acct.innerHTML = `<span class="dot ${state}"></span>${text ? `<span>${esc(text)}</span>` : ""}<a id="acIn">Sign in to sync</a>`;
+    acct.querySelector("#acIn").onclick = openLogin;
+    return;
+  }
+  acct.innerHTML = `<span class="dot ${state}"></span><span title="${esc(user.email)}">${esc(text)}</span><a id="acOut" title="${esc(user.email)}">Sign out</a>`;
+  acct.querySelector("#acOut").onclick = () => A.signOut(auth);
+}
+const synced = () => status("ok", meta ? `Synced · ${when(meta.version)}` : "Signed in · nothing synced yet");
+function fail(e) { console.error(e); status("err", "Sync problem: " + (e.code || e.message || e)); }
+
+const refs = {
+  files: () => F.doc(db, "users", user.uid, "invexp", "files"),
+  settings: () => F.doc(db, "users", user.uid, "invexp", "settings"),
+  chunk: (id, i) => F.doc(db, "users", user.uid, "invexpChunks", `${id}_${i}`),
+};
+const pipe = async (u8, stream) => new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(stream)).arrayBuffer());
+const gzip = u8 => pipe(u8, new CompressionStream("gzip")), gunzip = u8 => pipe(u8, new DecompressionStream("gzip"));
+async function fileId(key) {
+  const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key)));
+  return [...h.slice(0, 12)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// ---- files: upload what changed (unchanged files keep their stored parts), download a newer set from another device
+async function upload() {
+  if (!user) return;
+  if (busy) { again = true; return; }
+  busy = true;
+  try {
+    const files = sources.filter(s => !s.error);
+    const old = new Map((meta?.files || []).map(f => [f.key, f]));
+    const out = [];
+    for (const [n, s] of files.entries()) {
+      if (old.has(s.key)) { out.push(old.get(s.key)); continue; }
+      status("busy", `Uploading ${s.name} (${n + 1} of ${files.length})…`);
+      const raw = s.kind === "xlsx" ? new Uint8Array(s.buf) : new TextEncoder().encode(s.text);
+      const z = await gzip(raw), id = await fileId(s.key), chunks = Math.max(1, Math.ceil(z.length / CHUNK));
+      for (let i = 0; i < chunks; i++) await F.setDoc(refs.chunk(id, i), { data: F.Bytes.fromUint8Array(z.subarray(i * CHUNK, (i + 1) * CHUNK)) });
+      out.push({ key: s.key, name: s.name, path: s.path || s.name, mtime: s.mtime, size: s.size, added: s.added || 0, kind: s.kind, id, chunks, bytes: z.length });
+    }
+    const version = Date.now();
+    syncMark.set({ version, dirty: false });   // before writing, so our own write isn't mistaken for another device's
+    await F.setDoc(refs.files(), { version, files: out });
+    const keep = new Set(out.map(f => f.id));
+    for (const f of old.values()) if (!keep.has(f.id)) for (let i = 0; i < f.chunks; i++) await F.deleteDoc(refs.chunk(f.id, i));
+    meta = { version, files: out };
+    synced();
+  } catch (e) { syncMark.set({ dirty: true }); fail(e); }
+  finally { busy = false; if (again) { again = false; upload(); } }
+}
+async function download(m) {
+  busy = true;
+  try {
+    const files = [];
+    for (const [n, f] of m.files.entries()) {
+      status("busy", `Downloading ${f.name} (${n + 1} of ${m.files.length})…`);
+      const parts = [];
+      for (let i = 0; i < f.chunks; i++) {
+        const d = await F.getDoc(refs.chunk(f.id, i));
+        if (!d.exists()) throw new Error(`part of ${f.name} is missing — load the files again on the device that has them`);
+        parts.push(d.data().data.toUint8Array());
+      }
+      const z = new Uint8Array(parts.reduce((a, p) => a + p.length, 0));
+      let o = 0; parts.forEach(p => { z.set(p, o); o += p.length; });
+      const raw = await gunzip(z), { id, chunks, bytes, ...rest } = f;
+      files.push(f.kind === "xlsx" ? { ...rest, buf: raw.buffer } : { ...rest, text: new TextDecoder().decode(raw) });
+    }
+    await replaceSources(files);
+    meta = m; syncMark.set({ version: m.version, dirty: false });
+    synced();
+  } catch (e) { fail(e); }
+  finally { busy = false; }
+}
+function onFiles(snap) {
+  if (snap.metadata.hasPendingWrites || busy) return;
+  const m = snap.exists() ? snap.data() : null, mark = syncMark.get();
+  if (!m) { meta = null; sources.length ? upload() : synced(); return; }
+  if (m.version <= (mark.version || 0)) { meta = m; mark.dirty || m.version < mark.version ? upload() : synced(); return; }
+  // the cloud has a newer set, uploaded from another device
+  if (mark.dirty && sources.length && !confirm(`Your synced files were updated on another device (${when(m.version)}), but this device also has changes that weren't uploaded.\n\n`
+      + `OK — use the synced files (replaces this device's)\nCancel — upload this device's files instead`)) { meta = m; upload(); return; }
+  download(m);
+}
+
+// ---- mapping choices
+function pushSettings() {
+  if (!user) return;
+  clearTimeout(settingsTimer);
+  settingsTimer = setTimeout(async () => {
+    const version = Date.now();
+    syncMark.set({ settingsVersion: version, settingsDirty: false });
+    try { await F.setDoc(refs.settings(), { version, json: JSON.stringify(S) }); } catch (e) { syncMark.set({ settingsDirty: true }); fail(e); }
+  }, 800);
+}
+function onSettings(snap) {
+  if (snap.metadata.hasPendingWrites) return;
+  const m = snap.exists() ? snap.data() : null, mark = syncMark.get();
+  if (!m) { if (mark.settingsDirty || JSON.stringify(S) !== JSON.stringify(SETTINGS_DEFAULT)) pushSettings(); return; }
+  if (mark.settingsDirty) pushSettings();   // changed here since the last sync: this device wins
+  else if (m.version > (mark.settingsVersion || 0)) { syncMark.set({ settingsVersion: m.version }); applyRemoteSettings(JSON.parse(m.json)); }
+}
+
+// ---- sign-in box
+const ERR = {
+  "auth/invalid-credential": "Wrong email or password.", "auth/wrong-password": "Wrong email or password.", "auth/user-not-found": "No account with that email.",
+  "auth/invalid-email": "That isn't a valid email address.", "auth/too-many-requests": "Too many attempts — wait a few minutes and try again.",
+  "auth/email-already-in-use": "That email already has an account — sign in instead.", "auth/weak-password": "Use a password of at least 6 characters.",
+  "auth/network-request-failed": "Can't reach Firebase — check the connection.", "auth/operation-not-allowed": "Email sign-in isn't enabled in the Firebase project.",
+  "auth/missing-password": "Enter your password.",
+};
+const lgErr = document.getElementById("lgErr"), lgEmail = document.getElementById("lgEmail"), lgPw = document.getElementById("lgPw");
+const showErr = e => { lgErr.style.color = ""; lgErr.textContent = ERR[e.code] || e.message; };
+function openLogin() { lgErr.textContent = ""; lgPw.value = ""; dlg.showModal(); (lgEmail.value ? lgPw : lgEmail).focus(); }
+document.getElementById("loginForm").onsubmit = async e => {
+  e.preventDefault();
+  if (!auth) return showErr({ message: "Sign-in isn't available yet (no connection to Firebase)." });
+  try { await A.signInWithEmailAndPassword(auth, lgEmail.value.trim(), lgPw.value); dlg.close(); } catch (err) { showErr(err); }
+};
+document.getElementById("lgNew").onclick = async () => {
+  if (!lgEmail.reportValidity() || !lgPw.reportValidity()) return;
+  if (!confirm(`Create a new account for ${lgEmail.value.trim()} with this password?`)) return;
+  try { await A.createUserWithEmailAndPassword(auth, lgEmail.value.trim(), lgPw.value); dlg.close(); } catch (err) { showErr(err); }
+};
+document.getElementById("lgReset").onclick = async () => {
+  if (!lgEmail.reportValidity()) return;
+  try { await A.sendPasswordResetEmail(auth, lgEmail.value.trim()); lgErr.style.color = "var(--good)"; lgErr.textContent = "Password reset email sent."; } catch (err) { showErr(err); }
+};
+document.getElementById("lgCancel").onclick = () => dlg.close();
+
+// ---- start
+status("", "");
+(async () => {
+  try {
+    const [{ initializeApp }, Am, Fm] = await Promise.all([import(`${SDK}/firebase-app.js`), import(`${SDK}/firebase-auth.js`), import(`${SDK}/firebase-firestore.js`)]);
+    A = Am; F = Fm;
+    const app = initializeApp(firebaseConfig);
+    auth = A.getAuth(app); db = F.getFirestore(app);
+    await restored;
+    A.onAuthStateChanged(auth, u => {
+      unsubs.forEach(f => f()); unsubs = [];
+      user = u ? { uid: u.uid, email: u.email } : null; meta = null;
+      Cloud.upload = u ? upload : null; Cloud.pushSettings = u ? pushSettings : null;
+      if (!u) { status("", ""); return; }
+      status("busy", "Checking for synced files…");
+      unsubs.push(F.onSnapshot(refs.files(), onFiles, fail), F.onSnapshot(refs.settings(), onSettings, fail));
+    });
+  } catch (e) { console.error(e); status("err", "Sync unavailable (offline?)"); }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# Only the web page is published. The SWC API sync script, its config/token and any exports stay on this PC.
+*
+!.gitignore
+!index.html
+!README.md
+!.nojekyll
