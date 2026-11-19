@@ -269,6 +269,8 @@ a.lnk:hover { text-decoration: underline; }
         <label class="ck" title="Damaged ships are set aside: they don't count as held by their group and can't cover another group's gap">
           <input type="checkbox" id="lReady"> only undamaged ships count — damaged means
           <select id="lDmgRule"><option value="either">repair tag or hull below 100%</option><option value="tag">has a repair tag</option><option value="hull">hull below 100%</option></select></label>
+        <label class="ck" title="Ships tagged to a group but not inside its flagship are set aside until they move aboard (they still show as n→ in the matrix either way)">
+          <input type="checkbox" id="lAboard"> only ships aboard their flagship count</label>
         <span class="sub" id="lScopeSub"></span>
       </div>
       <div class="tiles" id="lTiles"></div>
@@ -291,12 +293,27 @@ a.lnk:hover { text-decoration: underline; }
       <div class="card" id="lBreak" hidden></div>
       <div class="card">
         <div class="tbar">
-          <h2>Holdings vs loadout matrix</h2><span class="sub">held / required · click a cell to open those records</span><div class="grow"></div>
+          <h2>Holdings vs loadout matrix</h2><span class="sub">held / required · +n⚠ damaged, set aside · n→ tagged to the group but not aboard its flagship · click a cell to open those records</span><div class="grow"></div>
           <select id="mxBy"><option value="group">columns: each group</option><option value="pos">columns: doctrine position (summed)</option></select>
         </div>
         <div class="legend"><span><i style="background:var(--short-wash)"></i>short</span><span><i style="background:var(--ok-wash)"></i>meets allocation</span>
           <span><i style="background:var(--accent-wash)"></i>over allocation</span><span><i style="background:var(--surface-2)"></i>held, no allocation for this position</span></div>
         <div class="mx" id="mx"></div>
+      </div>
+      <div class="card">
+        <div class="tbar">
+          <h2>Ship moves &amp; swaps</h2><span class="sub" id="mvSub"></span><div class="grow"></div>
+          <select id="mvGroup"></select><select id="mvAct"></select>
+          <button id="mvExport">Export CSV</button>
+        </div>
+        <div class="tablewrap tall"><table class="data" id="mvTbl"></table></div>
+        <p class="note">Compares every ship's group tag with where it physically is, for the groups in scope. A <b>stand-in</b> is a reserve ship lent to a group:
+          it carries the group tag <i>and</i> the reserve tag, and counts for the group. <b>Fill gap</b> — undamaged ships (regulars + stand-ins) are below the allocation:
+          tag reserve ships as stand-ins, preferably ones already aboard (<b>Tag as stand-in</b>). <b>Move aboard</b> — tagged to the group, undamaged, not inside its flagship.
+          <b>Release stand-in</b> — the regulars aboard cover the allocation again (a repaired ship is back), so remove the group tag and return it to the reserve;
+          stand-ins not yet moved aboard are released first. <b>Damaged</b> uses the damage rule chosen in Scope. <b>Stray</b> — inside the flagship but tagged to another group.
+          <b>Reserve aboard</b> — undamaged reserve / untagged ships carried by the flagship beyond any gap (one line per type). Only ships are listed;
+          flagships count toward their own line.</p>
       </div>
       <details class="card" id="dPos">
         <summary><h2>Positions &amp; Task Force quantities</h2><span class="sub" id="dPosSub"></span></summary><div id="posBody"></div>
@@ -732,6 +749,8 @@ function buildModel() {
     e.own = e.tg.find(g => G.get(g).nm === nm) || e.tg[0] || null;
     if (!e.own) { const u = e.unit.find(u => unitGroup.get(u)); if (u) { e.own = unitGroup.get(u); e.ownSrc = `Company tag (${u})`; } }
     if (!e.own && res) e.own = RESERVE;
+    // a reserve ship lent to a group while one of its ships is repaired carries both tags: it counts for the group until it's released
+    e.standIn = res && !!e.own && e.own !== RESERVE;
     if (e.et === "Ships" && e.own && G.get(e.own).nm === nm && G.get(e.own).kind === "tag") {
       const g = G.get(e.own); g.flagship = e;
       const par = e.tg.find(x => x !== e.own); if (par) g.parent = par;
@@ -763,6 +782,7 @@ function buildModel() {
     const chain = [];
     for (let a = e; a; a = a.p) { const fg = a.own && G.get(a.own); if (fg && fg.flagship === a) chain.push(fg.name); }
     const g = e.g && G.get(e.g);
+    e.chain = chain; e.isFlag = !!(e.own && G.get(e.own)?.flagship === e);
     e.pg = chain[0] || null;
     if (!g || g.kind !== "tag") e.place = "No group (reserve / unassigned / players)";
     else if (chain.includes(e.g)) e.place = "With its group's flagship";
@@ -930,7 +950,7 @@ function computeReq() {
   // an unfilled position has no ship, so no officer either
   const unfilled = P.map((p, i) => p.tfQty == null || S.onlyOfficer || (S.exBattalion && isBn(i)) ? 0 : Math.max(0, p.tfQty - slots[i]));
   const rows = L.rows.map((r, i) => ({ i, r, name: r.name, cat: r.et, perGroup: new Map(), reserve: 0, unassigned: 0, unmapped: 0, unmappedBy: new Map(),
-    damaged: 0, damagedBy: new Map() }));
+    damaged: 0, damagedBy: new Map(), away: 0, awayBy: new Map() }));
   ents.forEach(e => {
     if (e.row < 0 || !e.qty) return;
     const x = rows[e.row], g = e.dg && G.get(e.dg);
@@ -940,7 +960,14 @@ function computeReq() {
     if (!g) x.unassigned += e.qty;
     else if (g.kind === "reserve") x.reserve += e.qty;
     else if (g.pos < 0) { x.unmapped += e.qty; x.unmappedBy.set(g.name, (x.unmappedBy.get(g.name) || 0) + e.qty); }
-    else x.perGroup.set(g.name, (x.perGroup.get(g.name) || 0) + e.qty);
+    else {
+      // tagged to the group but not inside its flagship (a stand-in not moved yet, a repaired ship still at the yard…)
+      if (notAboard(e, g)) {
+        x.awayBy.set(g.name, (x.awayBy.get(g.name) || 0) + e.qty);
+        if (S.aboardOnly) { x.away += e.qty; return; }
+      }
+      x.perGroup.set(g.name, (x.perGroup.get(g.name) || 0) + e.qty);
+    }
   });
   rows.forEach(x => {
     const a = x.r.alloc;
@@ -949,7 +976,7 @@ function computeReq() {
       // a child group's own column lists its flagship, but that ship already counts toward the parent's allocation
       const self = g.parent && g.flagship && g.flagship.row === x.i ? 1 : 0;
       const req = Math.max(0, a[g.pos] * g.mult - self), held = x.perGroup.get(g.name) || 0;
-      x.cells.set(g.name, { req, held, dmg: x.damagedBy.get(g.name) || 0 });
+      x.cells.set(g.name, { req, held, dmg: x.damagedBy.get(g.name) || 0, away: x.awayBy.get(g.name) || 0 });
       x.required += req; x.held += held; x.short += Math.max(0, req - held); x.surplus += Math.max(0, held - req);
     });
     x.unfilledReq = P.reduce((s, p, i) => s + unfilled[i] * a[i], 0);
@@ -957,7 +984,7 @@ function computeReq() {
     x.available = x.reserve + x.unassigned + (S.useSurplus ? x.surplus + x.unmapped : 0);
     x.net = Math.max(0, x.short - x.available);
     x.moves = x.short - x.net;
-    x.total = x.held + x.reserve + x.unassigned + x.unmapped + x.damaged;
+    x.total = x.held + x.reserve + x.unassigned + x.unmapped + x.damaged + x.away;
     x.schedule = L.schedule.get(x.r.norm);
     x.sheetReq = P.reduce((s, p, i) => s + a[i] * (p.tfQty || 0), 0);
   });
@@ -996,16 +1023,21 @@ const hullDamaged = e => +e.rec.hullMax > 0 && +e.rec.hull < +e.rec.hullMax;
 const isDamaged = e => e.et === "Ships" && (S.damageRule === "tag" ? repairTagged(e) : S.damageRule === "hull" ? hullDamaged(e) : repairTagged(e) || hullDamaged(e));
 const CONDITION_ORDER = ["Undamaged", "Repair tag + hull damaged", "Hull damaged, no repair tag", "Repair tag, hull 100%"];
 const damagedConditions = () => S.damageRule === "tag" ? [CONDITION_ORDER[1], CONDITION_ORDER[3]] : S.damageRule === "hull" ? CONDITION_ORDER.slice(1, 3) : CONDITION_ORDER.slice(1);
+// a ship counted for a carrier group but not inside that group's flagship (flagships themselves and groups without a flagship ship never are)
+const notAboard = (e, g) => e.et === "Ships" && !e.isFlag && g.kind === "tag" && !!g.flagship && !e.chain.includes(g.name);
+const ROLE_ORDER = ["Flagship", "Regular (group tag)", "Stand-in (group + reserve tag)", "Reserve", "Other group kind", "Unassigned"];
+const role = e => e.isFlag ? ROLE_ORDER[0] : !e.g ? ROLE_ORDER[5] : e.g === RESERVE ? ROLE_ORDER[3]
+  : M.G.get(e.g)?.kind !== "tag" ? ROLE_ORDER[4] : e.standIn ? ROLE_ORDER[2] : ROLE_ORDER[1];
 const condition = e => { const t = repairTagged(e), h = hullDamaged(e); return t && h ? CONDITION_ORDER[1] : h ? CONDITION_ORDER[2] : t ? CONDITION_ORDER[3] : CONDITION_ORDER[0]; };
 const TAB_DEF = {
   Ships: {
-    dims: [{ key: "cond", label: "Condition", get: r => r.cond, order: CONDITION_ORDER },
+    dims: [{ key: "cond", label: "Condition", get: r => r.cond, order: CONDITION_ORDER }, { key: "role", label: "Role in its group", get: r => r.role, order: ROLE_ORDER },
       { key: "where", label: "Docked / in space", get: r => r.where }, { key: "hullB", label: "Hull", get: r => r.hullB, order: HULL_ORDER },
       { key: "cmdr", label: "Commander", get: r => r.cmdr }, { key: "pilot", label: "Pilot", get: r => r.pilot }],
     cols: [["name", "Name"], ["id", "ID", 1], ["type", "Type"], ["group", "Group"], ["aboard", "Aboard"], ["loc", "Location"], ["hull", "Hull %", 1],
-      ["cond", "Condition"], ["n", "Records inside", 1], ["pax", "Passengers", 1], ["cmdr", "Commander"], ["pilot", "Pilot"], ["info", "Info text"]],
+      ["cond", "Condition"], ["role", "Role"], ["n", "Records inside", 1], ["pax", "Passengers", 1], ["cmdr", "Commander"], ["pilot", "Pilot"], ["info", "Info text"]],
     extra(r, e) {
-      r.cond = condition(e);
+      r.cond = condition(e); r.role = role(e);
       r.where = e.p ? "Docked in a ship" : e.ptype === "Systems" ? "In space" : e.ptype === "Cities" ? "Landed in a city" : (e.ptype || NONE);
       r.cmdr = blank(e.rec.commander_name) || NONE; r.pilot = blank(e.rec.pilot_name) || NONE;
       r.pax = parseInt(e.rec.passengersTotal) ? `${fmt(+e.rec.passengersTotal - (+e.rec.passengersRemaining || 0))}/${fmt(+e.rec.passengersTotal)}` : "";
@@ -1543,12 +1575,14 @@ function renderLoadout() {
   document.getElementById("lOnlyOff").checked = !!S.onlyOfficer;
   document.getElementById("lReady").checked = !!S.readyOnly;
   document.getElementById("lDmgRule").value = S.damageRule || "either";
-  const ex = REQ.excluded, dmg = rows.reduce((s, x) => s + (x.cat === "Ships" ? x.damaged : 0), 0);
+  document.getElementById("lAboard").checked = !!S.aboardOnly;
+  const ex = REQ.excluded, dmg = rows.reduce((s, x) => s + (x.cat === "Ships" ? x.damaged : 0), 0), away = rows.reduce((s, x) => s + x.away, 0);
   document.getElementById("lScopeSub").textContent = (S.countBy === "physical"
     ? "Records count toward the group whose flagship they are inside; detached ones count as unassigned. " : "")
     + (S.readyOnly ? `${plural(dmg, "damaged ship")} set aside. ` : "")
+    + (S.aboardOnly && S.countBy !== "physical" ? `${plural(away, "ship")} not aboard set aside. ` : "")
     + (ex.length ? `${plural(ex.length, "group")} left out (their requirement and holdings): ${ex.map(g => g.name).join(", ")}` : "");
-  renderReqTable(); renderBreakdown(); renderMatrix(); renderPosTable(); renderGroupTable(); renderTypeTable(); renderCargoTable();
+  renderReqTable(); renderBreakdown(); renderMatrix(); renderMoves(); renderPosTable(); renderGroupTable(); renderTypeTable(); renderCargoTable();
 }
 const lFilter = () => {
   const cat = document.getElementById("lCat").value, q = document.getElementById("lQ").value.trim().toLowerCase(), only = document.getElementById("lOnlyShort").checked;
@@ -1556,14 +1590,14 @@ const lFilter = () => {
 };
 let lSort = { k: "order", d: 1 };
 const L_COLS_ALL = [["cat", "Category"], ["name", "Loadout line"], ["required", "Required", 1], ["held", "Held in groups", 1],
-  ["damaged", "Damaged (set aside)", 1], ["short", "Group shortfall", 1],
+  ["damaged", "Damaged (set aside)", 1], ["away", "Not aboard (set aside)", 1], ["short", "Group shortfall", 1],
   ["surplus", "Group surplus", 1], ["reserve", "Reserve", 1], ["unassigned", "Unassigned", 1], ["unmapped", "In groups w/o position", 1],
   ["moves", "Cover by moving stock", 1], ["net", "Net to requisition", 1],
   ["total", "Total owned", 1], ["schedule", "Sheet schedule", 1]];
 let L_COLS = L_COLS_ALL;
-const L_CLS = { short: x => x.short ? "short" : "", net: x => x.net ? "short" : "", surplus: x => x.surplus ? "over" : "", damaged: x => x.damaged ? "short" : "" };
+const L_CLS = { short: x => x.short ? "short" : "", net: x => x.net ? "short" : "", surplus: x => x.surplus ? "over" : "", damaged: x => x.damaged ? "short" : "", away: x => x.away ? "short" : "" };
 function renderReqTable() {
-  L_COLS = L_COLS_ALL.filter(c => c[0] !== "damaged" || S.readyOnly);
+  L_COLS = L_COLS_ALL.filter(c => (c[0] !== "damaged" || S.readyOnly) && (c[0] !== "away" || S.aboardOnly));
   const CAT_ORDER = ["Ships", "Vehicles", "NPCs", "Items", "Droids"];
   const xs = lFilter().sort((a, b) => lSort.k === "order" ? (CAT_ORDER.indexOf(a.cat) - CAT_ORDER.indexOf(b.cat) || a.i - b.i)
     : ((typeof a[lSort.k] === "number" ? (a[lSort.k] ?? -1) - (b[lSort.k] ?? -1) : String(a[lSort.k]).localeCompare(String(b[lSort.k]))) * lSort.d || a.i - b.i));
@@ -1591,6 +1625,7 @@ document.getElementById("lExBn").onchange = e => { S.exBattalion = e.target.chec
 document.getElementById("lOnlyOff").onchange = e => { S.onlyOfficer = e.target.checked; saveSettings(); rebuildMapping(); };
 document.getElementById("lReady").onchange = e => { S.readyOnly = e.target.checked; saveSettings(); computeReq(); render(); };
 document.getElementById("lDmgRule").onchange = e => { S.damageRule = e.target.value; saveSettings(); computeReq(); render(); };
+document.getElementById("lAboard").onchange = e => { S.aboardOnly = e.target.checked; saveSettings(); computeReq(); render(); };
 document.getElementById("lExport").onclick = () => {
   const xs = lFilter();
   downloadCSV(`requisition_${xs.length}_lines.csv`, [L_COLS.map(c => c[1]).concat(["Unfilled-position share"]), ...xs.map(x => L_COLS.map(([k]) => x[k]).concat([x.unfilledReq]))]);
@@ -1609,19 +1644,19 @@ function renderBreakdown() {
   const x = REQ.rows[lSel];
   if (!x) { el.hidden = true; return; }
   el.hidden = false;
-  const lines = REQ.mapped.map(g => ({ g, c: x.cells.get(g.name) })).filter(o => o.c.req || o.c.held || o.c.dmg);
-  const rd = S.readyOnly;
+  const lines = REQ.mapped.map(g => ({ g, c: x.cells.get(g.name) })).filter(o => o.c.req || o.c.held || o.c.dmg || o.c.away);
+  const rd = S.readyOnly, pad = (rd ? "<td></td>" : "") + "<td></td>";
   let h = `<div class="tbar"><h2>${esc(x.name)}</h2><span class="sub">${esc(x.cat)} · required ${fmt(x.required)} · ${rd ? "undamaged" : "held"} in groups ${fmt(x.held)}${rd && x.damaged ? ` · ${fmt(x.damaged)} damaged` : ""} · net to requisition <b class="${x.net ? "bad" : "ok"}">${fmt(x.net)}</b></span><div class="grow"></div>
     <button id="bAll">Show all records →</button><button class="x" id="bClose">✕</button></div>
-    <div class="tablewrap tall"><table class="data"><tr><th>Group</th><th>Position</th><th>Flagship location</th><th class="num">Required</th><th class="num">${rd ? "Undamaged" : "Held"}</th>${rd ? '<th class="num">Damaged</th>' : ""}<th class="num">Difference</th></tr>`;
+    <div class="tablewrap tall"><table class="data"><tr><th>Group</th><th>Position</th><th>Flagship location</th><th class="num">Required</th><th class="num">${rd ? "Undamaged" : "Held"}</th>${rd ? '<th class="num">Damaged</th>' : ""}<th class="num" title="tagged to the group but not inside its flagship${S.aboardOnly ? " (set aside)" : " (included in the count)"}">Not aboard</th><th class="num">Difference</th></tr>`;
   lines.sort((a, b) => (a.c.held - a.c.req) - (b.c.held - b.c.req)).forEach(({ g, c }) => {
     const d = c.held - c.req;
     h += `<tr class="click" data-g="${esc(g.name)}"><td>${esc(g.name)}</td><td>${esc(L.positions[g.pos].key)}${g.mult > 1 ? ` ×${g.mult}` : ""}</td><td>${g.flagship ? esc(g.flagship.loc) : ""}</td>
-      <td class="num">${fmt(c.req)}</td><td class="num">${fmt(c.held)}</td>${rd ? `<td class="num ${c.dmg ? "short" : ""}">${c.dmg ? fmt(c.dmg) : ""}</td>` : ""}<td class="num ${d < 0 ? "short" : d > 0 ? "over" : ""}">${d > 0 ? "+" : ""}${fmt(d)}</td></tr>`;
+      <td class="num">${fmt(c.req)}</td><td class="num">${fmt(c.held)}</td>${rd ? `<td class="num ${c.dmg ? "short" : ""}">${c.dmg ? fmt(c.dmg) : ""}</td>` : ""}<td class="num">${c.away ? fmt(c.away) + "→" : ""}</td><td class="num ${d < 0 ? "short" : d > 0 ? "over" : ""}">${d > 0 ? "+" : ""}${fmt(d)}</td></tr>`;
   });
-  REQ.unfilled.forEach((u, i) => { if (u && x.r.alloc[i]) h += `<tr><td class="sub">${u} unfilled ${esc(L.positions[i].key)} position${u > 1 ? "s" : ""}</td><td>${esc(L.positions[i].key)}</td><td></td><td class="num">${fmt(u * x.r.alloc[i])}</td><td class="num">0</td><td class="num short">−${fmt(u * x.r.alloc[i])}</td></tr>`; });
+  REQ.unfilled.forEach((u, i) => { if (u && x.r.alloc[i]) h += `<tr><td class="sub">${u} unfilled ${esc(L.positions[i].key)} position${u > 1 ? "s" : ""}</td><td>${esc(L.positions[i].key)}</td><td></td><td class="num">${fmt(u * x.r.alloc[i])}</td><td class="num">0</td>${pad}<td class="num short">−${fmt(u * x.r.alloc[i])}</td></tr>`; });
   const extra = [[RESERVE, x.reserve], [UNASSIGNED, x.unassigned], ...[...x.unmappedBy].map(([g, v]) => [g + " (no position)", v, g])];
-  extra.forEach(([g, v, real]) => { if (v) h += `<tr class="click" data-g="${esc(real || g)}"><td>${esc(g)}</td><td class="sub">—</td><td></td><td></td><td class="num">${fmt(v)}</td><td class="num over">available</td></tr>`; });
+  extra.forEach(([g, v, real]) => { if (v) h += `<tr class="click" data-g="${esc(real || g)}"><td>${esc(g)}</td><td class="sub">—</td><td></td><td></td><td class="num">${fmt(v)}</td>${pad}<td class="num over">available</td></tr>`; });
   h += `</table></div>`;
   el.innerHTML = h;
   el.querySelector("#bClose").onclick = () => { lSel = null; renderReqTable(); renderBreakdown(); };
@@ -1639,21 +1674,22 @@ function renderMatrix() {
   colsDef.push({ key: RESERVE, label: "Reserve", special: "reserve" }, { key: UNASSIGNED, label: "Unassigned", special: "un" });
   if (S.readyOnly) colsDef.push({ key: "__damaged", label: "Damaged (set aside)", special: "dmg" });
   const cell = (x, c) => {
-    if (c.special === "reserve") return { held: x.reserve, req: 0, dmg: 0 };
-    if (c.special === "un") return { held: x.unassigned, req: 0, dmg: 0 };
-    if (c.special === "dmg") return { held: x.damaged, req: 0, dmg: 0 };
+    if (c.special === "reserve") return { held: x.reserve, req: 0, dmg: 0, away: 0 };
+    if (c.special === "un") return { held: x.unassigned, req: 0, dmg: 0, away: 0 };
+    if (c.special === "dmg") return { held: x.damaged, req: 0, dmg: 0, away: 0 };
     if (c.g) return x.cells.get(c.g.name);
-    let held = 0, req = 0, dmg = 0; REQ.mapped.forEach(g => { if (g.pos === c.pos) { const o = x.cells.get(g.name); held += o.held; req += o.req; dmg += o.dmg; } });
-    return { held, req: req + REQ.unfilled[c.pos] * x.r.alloc[c.pos], dmg };
+    let held = 0, req = 0, dmg = 0, away = 0; REQ.mapped.forEach(g => { if (g.pos === c.pos) { const o = x.cells.get(g.name); held += o.held; req += o.req; dmg += o.dmg; away += o.away; } });
+    return { held, req: req + REQ.unfilled[c.pos] * x.r.alloc[c.pos], dmg, away };
   };
+  const awayTip = n => S.aboardOnly ? `${fmt(n)} tagged but not aboard the flagship, set aside` : `${fmt(n)} of these tagged but not aboard the flagship`;
   let h = `<table><thead><tr><th class="rl">Loadout line</th>${colsDef.map(c => `<th class="vert" data-c="${esc(c.key)}" title="${esc(c.label)}">${esc(c.label)}</th>`).join("")}</tr></thead><tbody>`;
   xs.forEach(x => {
     h += `<tr><th class="rl" title="${esc(x.name)}">${esc(x.name)}</th>`;
     colsDef.forEach((c, ci) => {
-      const { held, req, dmg } = cell(x, c);
-      if (!held && !req && !dmg) { h += `<td class="e">·</td>`; return; }
+      const { held, req, dmg, away } = cell(x, c);
+      if (!held && !req && !dmg && !away) { h += `<td class="e">·</td>`; return; }
       const cls = c.special ? "r" : !req ? "r" : held < req ? "s" : held > req ? "o" : "k";
-      h += `<td class="${cls}" data-i="${x.i}" data-ci="${ci}">${c.special || !req ? fmt(held) : `${fmt(held)}/${fmt(req)}`}${dmg ? ` <span title="damaged, set aside">+${fmt(dmg)}⚠</span>` : ""}</td>`;
+      h += `<td class="${cls}" data-i="${x.i}" data-ci="${ci}">${c.special || !req ? fmt(held) : `${fmt(held)}/${fmt(req)}`}${dmg ? ` +${fmt(dmg)}⚠` : ""}${away ? ` ${fmt(away)}→` : ""}</td>`;
     });
     h += `</tr>`;
   });
@@ -1662,7 +1698,7 @@ function renderMatrix() {
   const el = document.getElementById("mx"); el.innerHTML = h;
   el.querySelectorAll("td[data-i]").forEach(td => {
     const x = REQ.rows[+td.dataset.i], c = colsDef[+td.dataset.ci];
-    hover(td, () => { const { held, req, dmg } = cell(x, c); return `<b>${esc(x.name)}</b><br>${esc(c.label)}<br>${S.readyOnly && !c.special ? "undamaged " : "held "}${fmt(held)}${req ? ` · required ${fmt(req)} · <b>${held >= req ? "+" : ""}${fmt(held - req)}</b>` : ""}${dmg ? `<br>${fmt(dmg)} damaged, set aside` : ""}`; });
+    hover(td, () => { const { held, req, dmg, away } = cell(x, c); return `<b>${esc(x.name)}</b><br>${esc(c.label)}<br>${S.readyOnly && !c.special ? "undamaged " : "held "}${fmt(held)}${req ? ` · required ${fmt(req)} · <b>${held >= req ? "+" : ""}${fmt(held - req)}</b>` : ""}${dmg ? `<br>${fmt(dmg)} damaged, set aside` : ""}${away ? `<br>${awayTip(away)}` : ""}`; });
     td.onclick = () => {
       if (c.special === "dmg") return openTab("Ships", { loRow: x.name, cond: damagedConditions() });
       if (c.special) return groupFilterFor(x, c.key);
@@ -1678,6 +1714,109 @@ function renderMatrix() {
   });
 }
 document.getElementById("mxBy").onchange = renderMatrix;
+
+// ---- ship moves & swaps: each ship's group tag vs where it physically is, for the groups in scope
+const MV_ACTS = ["Fill gap", "Tag as stand-in", "Move aboard", "Release stand-in", "Damaged", "Stray", "Reserve aboard"];
+const MV_CLS = { "Fill gap": "short", "Tag as stand-in": "over", "Release stand-in": "over", Damaged: "short" };
+let MV = [];
+function computeMoves() {
+  const { ents } = M, acts = [];
+  const scope = new Map(REQ.mapped.filter(g => g.kind === "tag").map(g => [g.name, g]));
+  const stats = new Map();
+  const stat = (g, row) => { const k = g.name + "|" + row; let o = stats.get(k); if (!o) stats.set(k, o = { g, row, reg: [], regAway: [], si: [], dmg: [], resAboard: [] }); return o; };
+  const lineOf = row => row >= 0 ? L.rows[row].name : "(not in loadout)";
+  // every ship line a group should carry, even if it has none of them yet
+  REQ.rows.forEach(x => { if (x.cat === "Ships") scope.forEach(g => { if (x.cells.get(g.name)?.req) stat(g, x.i); }); });
+  const resFree = new Map();   // undamaged reserve / unassigned ships per loadout line, wherever they are
+  ents.forEach(e => {
+    if (e.et !== "Ships") return;
+    const dmg = isDamaged(e);
+    if (e.isFlag) {   // a flagship fills its own line (the SSD's CR-90 its parent's), and is always "aboard"
+      const g = e.dgA && scope.get(e.dgA);
+      if (g) { const o = stat(g, e.row); if (dmg) o.dmg.push(e); else o.reg.push(e); }
+      return;
+    }
+    const g = e.g && scope.get(e.g);
+    if (g) {
+      const o = stat(g, e.row);
+      if (dmg) o.dmg.push(e); else if (e.standIn) o.si.push(e); else (notAboard(e, g) ? o.regAway : o.reg).push(e);
+      return;
+    }
+    const free = !e.g || e.g === RESERVE;
+    if (free && !dmg && e.row >= 0) resFree.set(e.row, (resFree.get(e.row) || 0) + 1);
+    // inside an in-scope flagship without being tagged to a group whose flagship it is in
+    const host = e.chain.find(n => scope.has(n));
+    if (!host || (e.g && e.chain.includes(e.g))) return;
+    if (free && !dmg && e.row >= 0) stat(scope.get(host), e.row).resAboard.push(e);
+    else if (!free) acts.push({ act: "Stray", g: scope.get(host), e, line: lineOf(e.row), note: `aboard, but tagged ${e.g}` });
+  });
+  stats.forEach(o => {
+    const { g, row } = o, x = row >= 0 ? REQ.rows[row] : null, line = lineOf(row);
+    const req = x ? x.cells.get(g.name)?.req || 0 : 0;
+    const siAway = o.si.filter(e => notAboard(e, g)), siIn = o.si.filter(e => !notAboard(e, g));
+    // stand-ins go back once the regulars aboard cover the allocation again; ones not moved aboard yet go first
+    const release = x ? Math.min(o.si.length, Math.max(0, o.reg.length + o.si.length - req)) : 0;
+    const rel = [...siAway, ...siIn].slice(0, release), relSet = new Set(rel);
+    rel.forEach(e => acts.push({ act: "Release stand-in", g, e, line, note: `remove the ${g.name} tag — it goes back to the reserve` }));
+    [...o.regAway, ...siAway.filter(e => !relSet.has(e))].forEach(e => acts.push({ act: "Move aboard", g, e, line,
+      note: `${e.standIn ? "stand-in" : "regular"} → ${g.flagship.label}${g.flagship.loc ? ` (${g.flagship.loc})` : ""}` }));
+    o.dmg.forEach(e => acts.push({ act: "Damaged", g, e, line, note: (notAboard(e, g) ? "not aboard" : "aboard") + (e.standIn ? " · a stand-in" : "") }));
+    const need = x ? Math.max(0, req - o.reg.length - o.regAway.length - o.si.length) : 0;
+    const tagNow = o.resAboard.slice(0, need);
+    const free = { loRow: line, group: [RESERVE, UNASSIGNED], cond: CONDITION_ORDER.filter(c => !damagedConditions().includes(c)) };
+    if (need) acts.push({ act: "Fill gap", g, e: null, line, n: need, filter: free,
+      note: `${fmt(need)} undamaged short · ${tagNow.length ? `${fmt(tagNow.length)} reserve already aboard (listed) · ` : ""}${fmt(resFree.get(row) || 0)} undamaged in reserve / unassigned` });
+    tagNow.forEach(e => acts.push({ act: "Tag as stand-in", g, e, line, note: `already aboard — add the ${g.name} tag${e.g === RESERVE ? " (keep the reserve tag)" : " and the reserve tag"}` }));
+    const spare = o.resAboard.length - tagNow.length;
+    if (spare > 0) acts.push({ act: "Reserve aboard", g, e: null, line, n: spare, filter: { ...free, pg: g.name },
+      note: `${fmt(spare)} undamaged reserve / untagged ships aboard — no gap for this type here` });
+  });
+  const gi = new Map(REQ.mapped.map((g, i) => [g.name, i]));
+  return acts.sort((a, b) => gi.get(a.g.name) - gi.get(b.g.name) || MV_ACTS.indexOf(a.act) - MV_ACTS.indexOf(b.act) || a.line.localeCompare(b.line) || (a.e?.label || "").localeCompare(b.e?.label || ""));
+}
+const mvNow = e => `${e.aboard ? "aboard " + e.aboard : e.holder} · ${e.loc}`;
+function mvFiltered() {
+  const g = document.getElementById("mvGroup").value, a = document.getElementById("mvAct").value;
+  return MV.filter(m => (!g || m.g.name === g) && (!a || m.act === a));
+}
+function renderMoves() {
+  MV = computeMoves();
+  const gSel = document.getElementById("mvGroup"), kg = gSel.value;
+  const groups = [...new Set(MV.map(m => m.g.name))];
+  gSel.innerHTML = `<option value="">all groups</option>` + groups.map(n => `<option>${esc(n)}</option>`).join("");
+  gSel.value = groups.includes(kg) ? kg : "";
+  drawMoves();
+}
+function drawMoves() {
+  const gSel = document.getElementById("mvGroup"), aSel = document.getElementById("mvAct"), ka = aSel.value;
+  const inG = MV.filter(m => !gSel.value || m.g.name === gSel.value);
+  const n = a => inG.filter(m => m.act === a).reduce((s, m) => s + (m.e ? 1 : m.n), 0);
+  aSel.innerHTML = `<option value="">all actions</option>` + MV_ACTS.map(a => `<option value="${a}">${a} (${fmt(n(a))})</option>`).join("");
+  aSel.value = MV_ACTS.includes(ka) ? ka : "";
+  document.getElementById("mvSub").textContent = `${fmt(n("Fill gap"))} ships short · ${fmt(n("Move aboard"))} to move aboard · ${fmt(n("Release stand-in"))} stand-ins to release · `
+    + `${fmt(n("Damaged"))} damaged · ${fmt(n("Stray"))} strays · ${fmt(n("Reserve aboard"))} spare reserve aboard carriers` + (S.countBy === "physical" ? " · uses each ship's tag, whatever “Count by” says" : "");
+  const xs = mvFiltered(), CAP = 1500;
+  let h = `<tr><th>Group</th><th>Action</th><th>Loadout line</th><th>Ship</th><th>What to do</th><th>Now</th><th>Condition</th><th>Role</th><th class="num">ID</th></tr>`;
+  xs.slice(0, CAP).forEach((m, i) => {
+    const e = m.e;
+    h += `<tr${e ? "" : ` class="click" data-i="${i}" title="show these undamaged reserve / unassigned ${esc(m.line)} ships"`}><td>${esc(m.g.name)}</td><td class="${MV_CLS[m.act] || ""}">${m.act}</td><td>${esc(m.line)}</td>`
+      + `<td>${e ? entLink(e) : '<span class="sub">—</span>'}</td><td title="${esc(m.note)}">${esc(m.note)}</td>`
+      + (e ? `<td title="${esc(mvNow(e))}">${esc(mvNow(e))}</td><td>${esc(condition(e))}</td><td>${esc(role(e))}</td><td class="num">${esc(e.id)}</td>` : `<td></td><td></td><td></td><td></td>`)
+      + `</tr>`;
+  });
+  if (!xs.length) h += `<tr><td colspan="9" class="sub">Nothing to do — every group in scope has its ships tagged and aboard.</td></tr>`;
+  if (xs.length > CAP) h += `<tr><td colspan="9" class="sub">${fmt(xs.length - CAP)} more — narrow by group or action, or export the CSV.</td></tr>`;
+  const t = document.getElementById("mvTbl"); t.innerHTML = h;
+  t.querySelectorAll("a[data-uid]").forEach(a => a.onclick = () => openDrawer(a.dataset.uid));
+  t.querySelectorAll("tr[data-i]").forEach(tr => tr.onclick = () => openTab("Ships", xs[+tr.dataset.i].filter));
+}
+document.getElementById("mvGroup").onchange = drawMoves;
+document.getElementById("mvAct").onchange = drawMoves;
+document.getElementById("mvExport").onclick = () => {
+  const xs = mvFiltered();
+  downloadCSV(`ship_moves_${xs.length}.csv`, [["Group", "Action", "Loadout line", "Ship", "What to do", "Now", "Condition", "Role", "ID"],
+    ...xs.map(m => [m.g.name, m.act, m.line, m.e?.label || "", m.note, m.e ? mvNow(m.e) : "", m.e ? condition(m.e) : "", m.e ? role(m.e) : "", m.e?.id || ""])]);
+};
 
 // ---- mapping tables
 function markChanged(el, isDefault) { el.classList.toggle("changed", !isDefault); }
