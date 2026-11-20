@@ -555,7 +555,7 @@ let sources = [];   // {key, name, path, mtime, size, added, kind: "csv"|"xlsx",
 
 // ---- saved SWC item-inventory pages (Ctrl+S → .mhtml, or .html): the export has no column for what a cargo container holds,
 //      but the page shows "Contains: Droid Parts" for every container. Only uid → contents is kept (a few KB instead of MBs).
-const BUILD = "2026-11-20b (reads .mhtml pages)";   // shown in Data sources, to tell a cached old copy from the current one
+const BUILD = "2026-11-20c (reads .mhtml pages)";   // shown in Data sources, to tell a cached old copy from the current one
 const PAGE_HDR ="#swc-cargo-contents\tuid\tcontents\tunits";
 function savedPageHtml(text) {
   const b = /^Content-Type:\s*multipart\/related;[\s\S]*?boundary="?([^"\r\n;]+)"?/im.exec(text.slice(0, 4000));
@@ -635,6 +635,7 @@ async function collectDropped(dt) {
 }
 
 async function addFiles(list, replace = true) {
+  list = [...list];   // copy now: a file input's list is emptied as soon as the caller resets the input, while pages are still being read
   const kindOf = n => /\.xlsx$/i.test(n) ? "xlsx" : /\.(mhtml|mht|html?)$/i.test(n) ? "page" : "csv";
   const busy = document.getElementById("busy");
   // saved pages are read first: an .html that isn't an SWC inventory page (e.g. this tool itself, inside a dropped folder) is skipped quietly
