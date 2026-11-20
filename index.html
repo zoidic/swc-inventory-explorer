@@ -514,7 +514,7 @@ const DB = {
 };
 // Mapping choices (group → position, type → loadout line, cargo contents, TF quantities) survive new uploads.
 const SETTINGS_KEY = "invExplorerSettings";
-const SETTINGS_DEFAULT = { groupPos: {}, typeMap: {}, cargoMap: {}, tf: {}, useSurplus: true };
+const SETTINGS_DEFAULT = { groupPos: {}, typeMap: {}, cargoMap: {}, cargoById: {}, tf: {}, useSurplus: true };
 let S = structuredClone(SETTINGS_DEFAULT);
 try { Object.assign(S, JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")); } catch {}
 const storeSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(S)); } catch {} };
@@ -903,6 +903,7 @@ function applyLoadout() {
   Object.entries(ABBR).forEach(([a, t]) => { if (!vocab.has(a)) vocab.set(a, { type: t, et: typeEt(t) }); });
   const terms = [...vocab.keys()].sort((a, b) => b.length - a.length);
   M.vocab = [...new Set([...vocab.values()].map(v => v.type))].sort();
+  document.getElementById("dlVocab").innerHTML = M.vocab.map(v => `<option value="${esc(v)}">`).join("");
   M.cargo = new Map();
   ents.forEach(e => {
     if (e.type !== "Cargo Container") return;
@@ -918,7 +919,12 @@ function applyLoadout() {
     // no uses column at all (an API sync that couldn't read unit counts) → count the container once rather than as empty
     e.qty = "uses" in e.rec ? Math.max(0, parseInt(e.rec.uses) || 0) : 1;
     c.records++; c.units += e.qty;
-    const content = fromSwc && S.cargoMap[e.name] === undefined ? fromSwc : c.content;
+    // set for this one container — needed when the name doesn't say what's inside ("SS-18,5-LE-STOCK" holds different things on different ships)
+    const own = S.cargoById[e.id];
+    e.contentOwn = own !== undefined;
+    const content = e.contentOwn ? own : fromSwc && S.cargoMap[e.name] === undefined ? fromSwc : c.content;
+    if (e.contentOwn) c.own = (c.own || 0) + 1;
+    if (!content) c.unknown = (c.unknown || 0) + e.qty;
     e.content = content || "(unknown contents)";
     if (content) {
       const et = typeEt(content);
@@ -1500,7 +1506,9 @@ function openDrawer(uid) {
   if (g && g.flagship && g.flagship !== e) kv.push(["Group flagship", entLink(g.flagship)]);
   if (e.posKey) kv.push(["Doctrine position", esc(e.posKey)]);
   if (e.row >= 0) kv.push(["Loadout line", `${esc(L.rows[e.row].name)}${e.qty !== 1 ? ` <span class="sub">· ${fmt(e.qty)} units</span>` : ""}`]);
-  if (e.type === "Cargo Container") kv.push(["Contents", `${esc(e.content)} × ${fmt(e.qty)}`]);
+  if (e.type === "Cargo Container") kv.push(["Contents", `<input class="map" list="dlVocab" id="dwCargo" value="${esc(!e.content || e.content.startsWith("(") ? "" : e.content)}" placeholder="(unknown — not counted)" style="width:190px">
+    × ${fmt(e.qty)}${+e.rec.maxUses ? ` <span class="sub">of ${fmt(+e.rec.maxUses)}</span>` : ""}<br><span class="sub">${e.contentOwn ? "set for this container only — clear to go back to the name's contents"
+      : `from the name — typing here sets this container only (the “Cargo container contents” table sets every “${esc(e.name)}”)`}</span>`]);
   kv.push(["Location", esc(e.loc)]);
   kv.push(["Physically", `${esc(e.place)}${e.pg && e.pg !== e.g ? ` <span class="sub">· inside ${esc(e.pg)}</span>` : ""}`]);
   if (e.aboard) kv.push(["Aboard", esc(e.aboard)]);
@@ -1542,6 +1550,8 @@ function openDrawer(uid) {
     Object.entries(rec).filter(([, v]) => blank(v)).map(([k, v]) => `<div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>`).join("") + `</div></details>`;
   drawer.innerHTML = h; drawer.classList.add("on"); drawer.scrollTop = 0;
   drawer.querySelector(".close").onclick = closeDrawer;
+  const dc = drawer.querySelector("#dwCargo");
+  if (dc) dc.onchange = () => { setContainerContents(e, dc.value); openDrawer(e.uid); };
   drawer.querySelectorAll("a[data-uid]").forEach(a => a.onclick = () => openDrawer(a.dataset.uid));
   drawer.querySelectorAll("button[data-inside]").forEach(b => b.onclick = () => { openTab(b.dataset.inside, {}, e); });
   drawer.querySelectorAll(".tg").forEach(tg => tg.onclick = () => {
@@ -1894,18 +1904,33 @@ function renderTypeTable() {
     };
   });
 }
+// one container's own contents; typing what its name already gives (or nothing) drops the override
+function setContainerContents(e, value) {
+  const v = value.trim(), byName = M.cargo.get(e.name)?.content || "";
+  if (!v || v === byName) delete S.cargoById[e.id]; else S.cargoById[e.id] = v;
+  saveSettings(); rebuildMapping();
+}
+let cargoOpen = new Set();   // container names expanded to one row per container
 function renderCargoTable() {
-  const cs = [...M.cargo.values()].sort((a, b) => (!!a.content) - (!!b.content) || b.units - a.units);
-  const unknown = cs.filter(c => !c.content);
-  document.getElementById("dCargoSub").textContent = `${cs.length} distinct container names · ${unknown.length} with unknown contents (${fmt(unknown.reduce((s, c) => s + c.units, 0))} units)`;
-  document.getElementById("dlVocab").innerHTML = M.vocab.map(v => `<option value="${esc(v)}">`).join("");
+  const cs = [...M.cargo.values()].sort((a, b) => (!!a.content && !a.unknown) - (!!b.content && !b.unknown) || b.units - a.units);
+  const unknown = cs.filter(c => c.unknown);
+  document.getElementById("dCargoSub").textContent = `${cs.length} distinct container names · ${unknown.length} with unknown contents (${fmt(unknown.reduce((s, c) => s + c.unknown, 0))} units)`;
+  const byName = new Map(); M.ents.forEach(e => { if (e.type === "Cargo Container") (byName.get(e.name) || byName.set(e.name, []).get(e.name)).push(e); });
   let h = `<p class="note">Cargo containers are stacks: the export only gives the container's <b>name</b> and its <b>uses</b> (= units packed). The contents are guessed from
     the name (“Reserve: E-11”, “NEB Fidelity: Bacta Refill”, “GSP Tryast: HStick”) — or, for files from <b>swc_sync.py</b>, asked from SWC directly (“from SWC”).
-    Fix any wrong or unknown guess here — it applies to every container with that name.</p>
-    <div class="tablewrap tall"><table class="data"><tr><th>Container name</th><th class="num">Containers</th><th class="num">Units</th><th>Contents</th><th>Guess</th></tr>`;
+    Fix a wrong or unknown guess here for every container with that name — or, when one name holds different things on different ships
+    (“SS-18,5-LE-STOCK”), click <b>each ▸</b> to set the contents per container (also editable in a container's details panel). Per-container settings win.</p>
+    <div class="tablewrap tall"><table class="data"><tr><th>Container name</th><th class="num">Containers</th><th class="num">Units</th><th>Contents (whole name)</th><th>Guess</th><th>Per container</th></tr>`;
   cs.forEach(c => {
+    const open = cargoOpen.has(c.name);
     h += `<tr><td title="${esc(c.name)}">${esc(c.name)}</td><td class="num">${fmt(c.records)}</td><td class="num">${fmt(c.units)}</td>
-      <td><input class="map" list="dlVocab" data-c="${esc(c.name)}" value="${esc(c.content)}" placeholder="(unknown — not counted)"></td><td class="sub">${esc(c.guess || "—")}${c.swc ? " (from SWC)" : ""}</td></tr>`;
+      <td><input class="map" list="dlVocab" data-c="${esc(c.name)}" value="${esc(c.content)}" placeholder="(unknown — not counted)"></td><td class="sub">${esc(c.guess || "—")}${c.swc ? " (from SWC)" : ""}</td>
+      <td><a class="lnk" data-each="${esc(c.name)}">each ${open ? "▾" : "▸"}</a>${c.own ? ` <span class="pill">${fmt(c.own)} set</span>` : ""}${c.unknown ? ` <span class="bad">${fmt(c.unknown)} units unknown</span>` : ""}</td></tr>`;
+    if (open) (byName.get(c.name) || []).sort((a, b) => b.qty - a.qty).forEach(e => {
+      h += `<tr class="sub"><td style="padding-left:22px">${entLink(e, "#" + e.id)}</td><td class="num"></td><td class="num">${fmt(e.qty)}${+e.rec.maxUses ? ` / ${fmt(+e.rec.maxUses)}` : ""}</td>
+        <td><input class="map" list="dlVocab" data-id="${esc(e.uid)}" value="${e.contentOwn ? esc(e.content) : ""}" placeholder="${esc(c.content || "(unknown — not counted)")}"></td>
+        <td colspan="2">${esc(e.aboard ? "aboard " + e.aboard : e.holder)} · ${esc(e.g || UNASSIGNED)}</td></tr>`;
+    });
   });
   h += `</table></div>`;
   const el = document.getElementById("cargoBody"); el.innerHTML = h;
@@ -1913,6 +1938,12 @@ function renderCargoTable() {
     const c = M.cargo.get(inp.dataset.c); markChanged(inp, S.cargoMap[c.name] === undefined);
     inp.onchange = () => { const v = inp.value.trim(); if (v === c.guess) delete S.cargoMap[c.name]; else S.cargoMap[c.name] = v; saveSettings(); rebuildMapping(); };
   });
+  el.querySelectorAll("input[data-id]").forEach(inp => {
+    const e = M.E.get(inp.dataset.id); markChanged(inp, !e.contentOwn);
+    inp.onchange = () => setContainerContents(e, inp.value);
+  });
+  el.querySelectorAll("a[data-each]").forEach(a => a.onclick = () => { const n = a.dataset.each; cargoOpen.has(n) ? cargoOpen.delete(n) : cargoOpen.add(n); renderCargoTable(); });
+  el.querySelectorAll("a[data-uid]").forEach(a => a.onclick = () => openDrawer(a.dataset.uid));
 }
 function rebuildMapping() {
   const open = ["dPos", "dGroups", "dTypes", "dCargo"].filter(id => document.getElementById(id).open);
