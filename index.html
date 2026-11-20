@@ -13,6 +13,9 @@
   --series-1: #2a78d6; --bar-dim: #c9d9ee; --bar-ghost: #eeede8; --accent-wash: rgba(42,120,214,0.10);
   --seq-0: #cde2fb; --seq-1: #9ec5f4; --seq-2: #6da7ec; --seq-3: #3987e5; --seq-4: #256abf; --seq-5: #184f95; --seq-6: #0d366b;
   --good: #006300; --critical: #d03b3b; --short-wash: rgba(208,59,59,0.16); --ok-wash: rgba(0,99,0,0.12);
+  /* fill bands for big allocations: none · < 20% · 20–70% · 70–90% · ≥ 90% */
+  --f0-bg: #8f1d1d; --f0-fg: #ffffff; --f1-bg: rgba(208,59,59,0.20); --f1-fg: #b42828; --f2-bg: rgba(232,120,20,0.22); --f2-fg: #a65200;
+  --f3-bg: rgba(214,176,0,0.26); --f3-fg: #7d6300; --f4-bg: rgba(0,140,0,0.16); --f4-fg: #006300;
 }
 :root[data-theme="dark"] .viz-root {
   color-scheme: dark;
@@ -22,6 +25,8 @@
   --series-1: #3987e5; --bar-dim: #2a3d57; --bar-ghost: #262624; --accent-wash: rgba(57,135,229,0.16);
   --seq-0: #104281; --seq-1: #184f95; --seq-2: #1c5cab; --seq-3: #2a78d6; --seq-4: #5598e7; --seq-5: #86b6ef; --seq-6: #cde2fb;
   --good: #0ca30c; --critical: #e66767; --short-wash: rgba(230,103,103,0.22); --ok-wash: rgba(12,163,12,0.18);
+  --f0-bg: #5a1010; --f0-fg: #ffb0b0; --f1-bg: rgba(230,103,103,0.26); --f1-fg: #ef7a7a; --f2-bg: rgba(240,140,40,0.34); --f2-fg: #ffb366;
+  --f3-bg: rgba(230,200,40,0.26); --f3-fg: #ead46a; --f4-bg: rgba(12,163,12,0.20); --f4-fg: #7fd67f;
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
@@ -133,6 +138,11 @@ table.data td.dim { color: var(--text-muted); }
 .mx td.e { cursor: default; color: var(--text-muted); }
 .mx td.s { background: var(--short-wash); color: var(--critical); font-weight: 600; }
 .mx td.k { background: var(--ok-wash); }
+.mx td.f0 { background: var(--f0-bg); color: var(--f0-fg); font-weight: 600; }
+.mx td.f1 { background: var(--f1-bg); color: var(--f1-fg); font-weight: 600; }
+.mx td.f2 { background: var(--f2-bg); color: var(--f2-fg); font-weight: 600; }
+.mx td.f3 { background: var(--f3-bg); color: var(--f3-fg); font-weight: 600; }
+.mx td.f4 { background: var(--f4-bg); color: var(--f4-fg); font-weight: 600; }
 .mx td.o { background: var(--accent-wash); color: var(--series-1); }
 .mx td.r { background: var(--surface-2); color: var(--text-secondary); }
 .mx td:not(.e):hover { outline: 2px solid var(--text-primary); }
@@ -296,7 +306,10 @@ a.lnk:hover { text-decoration: underline; }
           <h2>Holdings vs loadout matrix</h2><span class="sub">held / required · +n⚠ damaged, set aside · n→ tagged to the group but not aboard its flagship · click a cell to open those records</span><div class="grow"></div>
           <select id="mxBy"><option value="group">columns: each group</option><option value="pos">columns: doctrine position (summed)</option></select>
         </div>
-        <div class="legend"><span><i style="background:var(--short-wash)"></i>short</span><span><i style="background:var(--ok-wash)"></i>meets allocation</span>
+        <div class="legend"><span><i style="background:var(--short-wash)"></i>short</span>
+          <span title="allocations of more than 12: shaded by how full they are">over 12 required, short —</span><span><i style="background:var(--f0-bg)"></i>none</span><span><i style="background:var(--f1-bg)"></i>&lt; 20%</span>
+          <span><i style="background:var(--f2-bg)"></i>20–70%</span><span><i style="background:var(--f3-bg)"></i>70–90%</span><span><i style="background:var(--f4-bg)"></i>90–99%</span>
+          <span><i style="background:var(--ok-wash)"></i>meets allocation</span>
           <span><i style="background:var(--accent-wash)"></i>over allocation</span><span><i style="background:var(--surface-2)"></i>held, no allocation for this position</span></div>
         <div class="mx" id="mx"></div>
       </div>
@@ -555,7 +568,7 @@ let sources = [];   // {key, name, path, mtime, size, added, kind: "csv"|"xlsx",
 
 // ---- saved SWC item-inventory pages (Ctrl+S → .mhtml, or .html): the export has no column for what a cargo container holds,
 //      but the page shows "Contains: Droid Parts" for every container. Only uid → contents is kept (a few KB instead of MBs).
-const BUILD = "2026-11-20c (reads .mhtml pages)";   // shown in Data sources, to tell a cached old copy from the current one
+const BUILD = "2026-11-20d (reads .mhtml pages)";   // shown in Data sources, to tell a cached old copy from the current one
 const PAGE_HDR ="#swc-cargo-contents\tuid\tcontents\tunits";
 function savedPageHtml(text) {
   const b = /^Content-Type:\s*multipart\/related;[\s\S]*?boundary="?([^"\r\n;]+)"?/im.exec(text.slice(0, 4000));
@@ -1751,6 +1764,8 @@ function renderBreakdown() {
   el.querySelectorAll("tr[data-g]").forEach(tr => tr.onclick = () => groupFilterFor(x, tr.dataset.g));
 }
 
+// short cells of big allocations (more than 12) are shaded by how full they are
+const fillBand = p => p <= 0 ? "f0" : p < 0.2 ? "f1" : p < 0.7 ? "f2" : p < 0.9 ? "f3" : "f4";
 function renderMatrix() {
   const by = document.getElementById("mxBy").value, P = L.positions;
   const xs = lFilter().filter(x => x.required || x.total);
@@ -1775,7 +1790,7 @@ function renderMatrix() {
     colsDef.forEach((c, ci) => {
       const { held, req, dmg, away } = cell(x, c);
       if (!held && !req && !dmg && !away) { h += `<td class="e">·</td>`; return; }
-      const cls = c.special ? "r" : !req ? "r" : held < req ? "s" : held > req ? "o" : "k";
+      const cls = c.special ? "r" : !req ? "r" : held < req ? (req > 12 ? fillBand(held / req) : "s") : held > req ? "o" : "k";
       h += `<td class="${cls}" data-i="${x.i}" data-ci="${ci}">${c.special || !req ? fmt(held) : `${fmt(held)}/${fmt(req)}`}${dmg ? ` +${fmt(dmg)}⚠` : ""}${away ? ` ${fmt(away)}→` : ""}</td>`;
     });
     h += `</tr>`;
