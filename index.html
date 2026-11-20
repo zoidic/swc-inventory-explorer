@@ -214,7 +214,7 @@ a.lnk:hover { text-decoration: underline; }
     <button id="addBtn" class="needs-data" title="Add files to the current upload without discarding it">＋ Add to current</button>
     <span id="acct" class="acct"></span>
     <button id="theme" title="Toggle light/dark">◐</button>
-    <input type="file" id="file" accept=".csv,text/csv,.xlsx" multiple hidden>
+    <input type="file" id="file" accept=".csv,text/csv,.xlsx,.mhtml,.mht,.html,.htm" multiple hidden>
     <input type="file" id="folder" webkitdirectory multiple hidden>
   </header>
 
@@ -553,8 +553,51 @@ const ET_LIST = ["Ships", "Vehicles", "NPCs", "Droids", "Items", "Facilities"];
 const REQUIRED = ["uid", "entityType_name", "name", "container_uid"];
 let sources = [];   // {key, name, path, mtime, size, added, kind: "csv"|"xlsx", text|buf, recs, et, error, stats}
 
+// ---- saved SWC item-inventory pages (Ctrl+S → .mhtml, or .html): the export has no column for what a cargo container holds,
+//      but the page shows "Contains: Droid Parts" for every container. Only uid → contents is kept (a few KB instead of MBs).
+const PAGE_HDR = "#swc-cargo-contents\tuid\tcontents\tunits";
+function savedPageHtml(text) {
+  const b = /^Content-Type:\s*multipart\/related;[\s\S]*?boundary="?([^"\r\n;]+)"?/im.exec(text.slice(0, 4000));
+  if (!b) return text;   // a plain .html save
+  for (const part of text.split("--" + b[1])) {
+    const i = part.search(/\r?\n\r?\n/); if (i < 0) continue;
+    const head = part.slice(0, i), body = part.slice(i).trim();
+    if (!/content-type:\s*text\/html/i.test(head)) continue;
+    let bytes;
+    if (/quoted-printable/i.test(head)) {
+      const s = body.replace(/=\r?\n/g, ""); bytes = new Uint8Array(s.length); let n = 0;
+      for (let k = 0; k < s.length; k++) {
+        if (s[k] === "=" && /^[0-9A-F]{2}$/i.test(s.substr(k + 1, 2))) { bytes[n++] = parseInt(s.substr(k + 1, 2), 16); k += 2; }
+        else bytes[n++] = s.charCodeAt(k) & 255;
+      }
+      bytes = bytes.subarray(0, n);
+    } else if (/base64/i.test(head)) bytes = Uint8Array.from(atob(body.replace(/\s+/g, "")), c => c.charCodeAt(0));
+    else return body;
+    return new TextDecoder().decode(bytes);
+  }
+  return "";
+}
+function cargoFromPage(text) {
+  const doc = new DOMParser().parseFromString(savedPageHtml(text), "text/html"), out = [];
+  doc.querySelectorAll("tr.inventory_entity_row[id^='invent_']").forEach(tr => {
+    const m = /Contains:\s*(?:<a[^>]*>)?\s*([^<]+?)\s*</.exec(tr.innerHTML);
+    if (!m) return;
+    const u = /Contents:\s*([\d,]+)/.exec(tr.textContent);
+    const clean = s => s.replace(/[\t\r\n]+/g, " ").trim();
+    out.push([tr.id.slice(7), clean(new DOMParser().parseFromString(m[1], "text/html").body.textContent), u ? u[1].replace(/,/g, "") : ""].join("\t"));
+  });
+  return out.length ? [PAGE_HDR, ...out].join("\n") : "";
+}
+
 async function parseSource(src) {
   src.error = ""; src.recs = []; src.loadout = null;
+  if (src.kind === "page") {
+    src.contents = new Map();
+    src.text.split("\n").slice(1).forEach(l => { const [uid, c] = l.split("\t"); if (uid && c) src.contents.set(uid, c); });
+    src.et = "Cargo contents";
+    if (!src.contents.size) src.error = "no cargo containers with contents on this page";
+    return;
+  }
   if (src.kind === "xlsx") {
     try { src.loadout = parseLoadout(await readXlsx(src.buf), src.name); }
     catch (e) { src.error = "not an Equipment loadout sheet (" + e.message + ")"; }
@@ -591,12 +634,19 @@ async function collectDropped(dt) {
 }
 
 async function addFiles(list, replace = true) {
-  const files = [...list].filter(f => /\.(csv|xlsx)$/i.test(f.name) && !f.name.startsWith("~$"));
+  const kindOf = n => /\.xlsx$/i.test(n) ? "xlsx" : /\.(mhtml|mht|html?)$/i.test(n) ? "page" : "csv";
   const busy = document.getElementById("busy");
-  if (!files.length) { busy.textContent = "No .csv or .xlsx files found in what was dropped."; return; }
+  // saved pages are read first: an .html that isn't an SWC inventory page (e.g. this tool itself, inside a dropped folder) is skipped quietly
+  const pages = new Map();
+  for (const f of [...list].filter(f => kindOf(f.name) === "page")) {
+    busy.textContent = `Reading ${f.name}…`;
+    try { const t = cargoFromPage(await f.text()); if (t) pages.set(f, t); } catch {}
+  }
+  const files = [...list].filter(f => /\.(csv|xlsx)$/i.test(f.name) && !f.name.startsWith("~$") || pages.has(f));
+  if (!files.length) { busy.textContent = "No .csv, .xlsx or saved SWC inventory page (.mhtml) found in what was dropped."; return; }
   if (replace) {
-    // new exports replace the exports, a new loadout replaces the loadout — loading one never throws away the other
-    const kinds = new Set(files.map(f => /\.xlsx$/i.test(f.name) ? "xlsx" : "csv"));
+    // new exports replace the exports, a new loadout replaces the loadout, new saved pages the saved pages — loading one never throws away the others
+    const kinds = new Set(files.map(f => kindOf(f.name)));
     const gone = sources.filter(s => kinds.has(s.kind));
     sources = sources.filter(s => !kinds.has(s.kind));
     for (const s of gone) await DB.del(s.key);
@@ -610,10 +660,10 @@ async function addFiles(list, replace = true) {
     busy.textContent = `Reading ${f.name}…`;
     const key = `${f.name}|${f.lastModified}|${f.size}`;
     if (sources.some(s => s.key === key)) { skipped++; continue; }
-    const kind = /\.xlsx$/i.test(f.name) ? "xlsx" : "csv";
+    const kind = kindOf(f.name);
     const src = { key, name: f.name, path: f._path || f.webkitRelativePath || f.name, mtime: f.lastModified, size: f.size,
       added: Date.now() + sources.length, kind };
-    if (kind === "xlsx") src.buf = await f.arrayBuffer(); else src.text = await f.text();
+    if (kind === "xlsx") src.buf = await f.arrayBuffer(); else src.text = kind === "page" ? pages.get(f) : await f.text();
     await parseSource(src);
     sources.push(src);
     if (!src.error) persist(src);
@@ -822,7 +872,13 @@ function buildModel() {
   ents.forEach(e => e.n = 0);
   order.forEach(e => { if (e.p) e.p.n += 1 + e.n; });
 
-  M = { ents, E, G, csvs };
+  // cargo contents read from saved SWC pages: newest page wins per container
+  const pageContents = new Map();
+  sources.filter(s => !s.error && s.kind === "page").sort((a, b) => a.mtime - b.mtime || a.added - b.added).forEach(s => {
+    s.contents.forEach((c, uid) => pageContents.set(uid, c));
+    s.stats = { rows: s.contents.size, won: [...s.contents.keys()].filter(u => E.has(u)).length };
+  });
+  M = { ents, E, G, csvs, pageContents };
 }
 
 // ======================= loadout matching =======================
@@ -907,11 +963,12 @@ function applyLoadout() {
   M.cargo = new Map();
   ents.forEach(e => {
     if (e.type !== "Cargo Container") return;
-    const fromSwc = blank(e.rec.cargo_contents);   // an API sync asks SWC what each container holds
+    // what SWC itself says this container holds: a saved inventory page, or an API sync's cargo_contents column
+    const fromSwc = M.pageContents.get(e.uid) || blank(e.rec.cargo_contents);
     let c = M.cargo.get(e.name);
     if (!c) {
       const cn = vocabKey(e.name), t = terms.find(t => cn.includes(t));
-      c = { name: e.name, guess: fromSwc || (t ? vocab.get(t).type : ""), swc: !!fromSwc, records: 0, units: 0 };
+      c = { name: e.name, guess: t ? vocab.get(t).type : "", records: 0, units: 0 };
       const o = S.cargoMap[e.name];
       c.content = o === undefined ? c.guess : o;
       M.cargo.set(e.name, c);
@@ -922,8 +979,11 @@ function applyLoadout() {
     // set for this one container — needed when the name doesn't say what's inside ("SS-18,5-LE-STOCK" holds different things on different ships)
     const own = S.cargoById[e.id];
     e.contentOwn = own !== undefined;
-    const content = e.contentOwn ? own : fromSwc && S.cargoMap[e.name] === undefined ? fromSwc : c.content;
+    // per-container setting → what SWC says → the name (as mapped or guessed)
+    const content = e.contentOwn ? own : fromSwc || c.content;
+    e.contentSrc = e.contentOwn ? "own" : fromSwc ? "swc" : "name";
     if (e.contentOwn) c.own = (c.own || 0) + 1;
+    if (!e.contentOwn && fromSwc) c.fromSwc = (c.fromSwc || 0) + 1;
     if (!content) c.unknown = (c.unknown || 0) + e.qty;
     e.content = content || "(unknown contents)";
     if (content) {
@@ -1172,7 +1232,8 @@ function renderSources() {
   const newest = {};
   csvs.forEach(s => s.et.split(", ").forEach(et => newest[et] = Math.max(newest[et] || 0, s.mtime)));
   let h = `<p class="note">New exports replace the current exports and a new loadout replaces the current loadout (use <b>＋ Add to current</b> to include
-    an export you forgot). The same uid in several files is
+    an export you forgot). Exports don't say what a cargo container holds: save SWC's item inventory page filtered to Cargo Containers
+    (Ctrl+S, “Webpage, Single File” → .mhtml, one file per page of results) and drop those too — each container's “Contains:” is used. The same uid in several files is
     de-duplicated — the <b>most recently modified</b> file wins. A file that is much older than the newest export of the same kind may hold records that no
     longer exist (sold, destroyed, moved out of the faction): its "kept" count shows how many records come only from it.</p>
     <div class="tablewrap"><table class="data"><tr><th>File</th><th>Kind</th><th>Modified</th><th class="num">Rows</th><th class="num">Kept</th><th class="num">Superseded by newer</th><th>Status</th><th></th></tr>`;
@@ -1182,6 +1243,8 @@ function renderSources() {
     h += `<tr><td title="${esc(s.path || s.name)}">${esc(s.path || s.name)}</td><td>${esc(s.kind === "xlsx" ? "Loadout" : s.et || "")}</td><td>${date(s.mtime)}</td>` + (s.error
       ? `<td colspan="3"></td><td class="bad">Rejected: ${esc(s.error)}</td>`
       : s.kind === "xlsx" ? `<td class="num">${fmt(s.loadout.rows.length)} lines</td><td colspan="2"></td><td>${L && L === s.loadout ? '<span class="ok">✓ in use</span>' : '<span class="sub">older loadout, not used</span>'}</td>`
+      : s.kind === "page" ? `<td class="num">${fmt(st.rows)}</td><td class="num" title="containers also in the loaded exports">${fmt(st.won)}</td><td></td>
+         <td>${st.won ? `<span class="ok">✓ contents for ${plural(st.won, "container")}</span>` : '<span class="warn">none of its containers are in the loaded exports</span>'}</td>`
       : `<td class="num">${fmt(st.rows)}</td><td class="num">${fmt(st.won)}</td><td class="num">${fmt(st.superseded)}</td>
          <td>${old && st.won ? `<span class="warn">older snapshot — ${fmt(st.won)} records only here</span>` : '<span class="ok">✓ OK</span>'}</td>`)
       + `<td><button class="x" data-key="${esc(s.key)}" title="Remove this file">✕</button></td></tr>`;
@@ -1507,7 +1570,8 @@ function openDrawer(uid) {
   if (e.posKey) kv.push(["Doctrine position", esc(e.posKey)]);
   if (e.row >= 0) kv.push(["Loadout line", `${esc(L.rows[e.row].name)}${e.qty !== 1 ? ` <span class="sub">· ${fmt(e.qty)} units</span>` : ""}`]);
   if (e.type === "Cargo Container") kv.push(["Contents", `<input class="map" list="dlVocab" id="dwCargo" value="${esc(!e.content || e.content.startsWith("(") ? "" : e.content)}" placeholder="(unknown — not counted)" style="width:190px">
-    × ${fmt(e.qty)}${+e.rec.maxUses ? ` <span class="sub">of ${fmt(+e.rec.maxUses)}</span>` : ""}<br><span class="sub">${e.contentOwn ? "set for this container only — clear to go back to the name's contents"
+    × ${fmt(e.qty)}${+e.rec.maxUses ? ` <span class="sub">of ${fmt(+e.rec.maxUses)}</span>` : ""}<br><span class="sub">${e.contentOwn ? "set for this container only — clear to go back to what SWC / the name says"
+      : e.contentSrc === "swc" ? "from SWC (saved inventory page) — typing here overrides it for this container"
       : `from the name — typing here sets this container only (the “Cargo container contents” table sets every “${esc(e.name)}”)`}</span>`]);
   kv.push(["Location", esc(e.loc)]);
   kv.push(["Physically", `${esc(e.place)}${e.pg && e.pg !== e.g ? ` <span class="sub">· inside ${esc(e.pg)}</span>` : ""}`]);
@@ -1904,10 +1968,12 @@ function renderTypeTable() {
     };
   });
 }
-// one container's own contents; typing what its name already gives (or nothing) drops the override
+// what a container would hold without its own setting
+const baseContents = e => M.pageContents.get(e.uid) || blank(e.rec.cargo_contents) || M.cargo.get(e.name)?.content || "";
+// one container's own contents; typing what SWC / its name already gives (or nothing) drops the override
 function setContainerContents(e, value) {
-  const v = value.trim(), byName = M.cargo.get(e.name)?.content || "";
-  if (!v || v === byName) delete S.cargoById[e.id]; else S.cargoById[e.id] = v;
+  const v = value.trim();
+  if (!v || v === baseContents(e)) delete S.cargoById[e.id]; else S.cargoById[e.id] = v;
   saveSettings(); rebuildMapping();
 }
 let cargoOpen = new Set();   // container names expanded to one row per container
@@ -1917,18 +1983,19 @@ function renderCargoTable() {
   document.getElementById("dCargoSub").textContent = `${cs.length} distinct container names · ${unknown.length} with unknown contents (${fmt(unknown.reduce((s, c) => s + c.unknown, 0))} units)`;
   const byName = new Map(); M.ents.forEach(e => { if (e.type === "Cargo Container") (byName.get(e.name) || byName.set(e.name, []).get(e.name)).push(e); });
   let h = `<p class="note">Cargo containers are stacks: the export only gives the container's <b>name</b> and its <b>uses</b> (= units packed). The contents are guessed from
-    the name (“Reserve: E-11”, “NEB Fidelity: Bacta Refill”, “GSP Tryast: HStick”) — or, for files from <b>swc_sync.py</b>, asked from SWC directly (“from SWC”).
+    the name (“Reserve: E-11”, “NEB Fidelity: Bacta Refill”, “GSP Tryast: HStick”) — unless SWC says what's inside (“from SWC”): drop SWC's item inventory
+    page saved as .mhtml (filtered to Cargo Containers) with the exports, or use files from <b>swc_sync.py</b>. What SWC says beats the name.
     Fix a wrong or unknown guess here for every container with that name — or, when one name holds different things on different ships
     (“SS-18,5-LE-STOCK”), click <b>each ▸</b> to set the contents per container (also editable in a container's details panel). Per-container settings win.</p>
     <div class="tablewrap tall"><table class="data"><tr><th>Container name</th><th class="num">Containers</th><th class="num">Units</th><th>Contents (whole name)</th><th>Guess</th><th>Per container</th></tr>`;
   cs.forEach(c => {
     const open = cargoOpen.has(c.name);
     h += `<tr><td title="${esc(c.name)}">${esc(c.name)}</td><td class="num">${fmt(c.records)}</td><td class="num">${fmt(c.units)}</td>
-      <td><input class="map" list="dlVocab" data-c="${esc(c.name)}" value="${esc(c.content)}" placeholder="(unknown — not counted)"></td><td class="sub">${esc(c.guess || "—")}${c.swc ? " (from SWC)" : ""}</td>
-      <td><a class="lnk" data-each="${esc(c.name)}">each ${open ? "▾" : "▸"}</a>${c.own ? ` <span class="pill">${fmt(c.own)} set</span>` : ""}${c.unknown ? ` <span class="bad">${fmt(c.unknown)} units unknown</span>` : ""}</td></tr>`;
+      <td><input class="map" list="dlVocab" data-c="${esc(c.name)}" value="${esc(c.content)}" placeholder="(unknown — not counted)"></td><td class="sub">${esc(c.guess || "—")}</td>
+      <td><a class="lnk" data-each="${esc(c.name)}">each ${open ? "▾" : "▸"}</a>${c.fromSwc ? ` <span class="pill" title="contents read from a saved SWC inventory page">${fmt(c.fromSwc)}/${fmt(c.records)} from SWC</span>` : ""}${c.own ? ` <span class="pill">${fmt(c.own)} set</span>` : ""}${c.unknown ? ` <span class="bad">${fmt(c.unknown)} units unknown</span>` : ""}</td></tr>`;
     if (open) (byName.get(c.name) || []).sort((a, b) => b.qty - a.qty).forEach(e => {
       h += `<tr class="sub"><td style="padding-left:22px">${entLink(e, "#" + e.id)}</td><td class="num"></td><td class="num">${fmt(e.qty)}${+e.rec.maxUses ? ` / ${fmt(+e.rec.maxUses)}` : ""}</td>
-        <td><input class="map" list="dlVocab" data-id="${esc(e.uid)}" value="${e.contentOwn ? esc(e.content) : ""}" placeholder="${esc(c.content || "(unknown — not counted)")}"></td>
+        <td><input class="map" list="dlVocab" data-id="${esc(e.uid)}" value="${e.contentOwn ? esc(e.content) : ""}" placeholder="${esc((baseContents(e) || "(unknown — not counted)") + (e.contentSrc === "swc" ? " · from SWC" : ""))}"></td>
         <td colspan="2">${esc(e.aboard ? "aboard " + e.aboard : e.holder)} · ${esc(e.g || UNASSIGNED)}</td></tr>`;
     });
   });
