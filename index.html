@@ -222,7 +222,7 @@ a.lnk:hover { text-decoration: underline; }
     <div class="drop" id="drop">
       <div class="big">Drop inventory exports or a whole folder here</div>
       <div class="sub">Ships, Vehicles, NPCs, Droids, Items and Facilities exports (.csv) — any number, any mix — plus
-        <b>Equipment loadout.xlsx</b>, together or separately</div>
+        <b>Equipment loadout.xlsx</b> and saved SWC cargo-container pages (<b>.mhtml</b>, for what each container holds), together or separately</div>
     </div>
     <div id="busy"></div>
     <p class="note">Files are read in your browser. If you're signed in, they are also saved to your account so your other devices get them;
@@ -555,7 +555,7 @@ let sources = [];   // {key, name, path, mtime, size, added, kind: "csv"|"xlsx",
 
 // ---- saved SWC item-inventory pages (Ctrl+S → .mhtml, or .html): the export has no column for what a cargo container holds,
 //      but the page shows "Contains: Droid Parts" for every container. Only uid → contents is kept (a few KB instead of MBs).
-const BUILD = "2026-11-20 (reads .mhtml pages)";   // shown in Data sources, to tell a cached old copy from the current one
+const BUILD = "2026-11-20b (reads .mhtml pages)";   // shown in Data sources, to tell a cached old copy from the current one
 const PAGE_HDR ="#swc-cargo-contents\tuid\tcontents\tunits";
 function savedPageHtml(text) {
   const b = /^Content-Type:\s*multipart\/related;[\s\S]*?boundary="?([^"\r\n;]+)"?/im.exec(text.slice(0, 4000));
@@ -646,7 +646,11 @@ async function addFiles(list, replace = true) {
   }
   const pageNote = noPage.length ? ` ${plural(noPage.length, "page")} had no cargo containers and ${noPage.length === 1 ? "was" : "were"} skipped: ${noPage.join(", ")}.` : "";
   const files = [...list].filter(f => /\.(csv|xlsx)$/i.test(f.name) && !f.name.startsWith("~$") || pages.has(f));
-  if (!files.length) { busy.textContent = "No .csv, .xlsx or saved SWC inventory page (.mhtml) found in what was dropped." + pageNote; return; }
+  if (!files.length) {
+    const seen = [...list].slice(0, 6).map(f => `${f.name} (${fmt(f.size)} B)`).join(", ");
+    busy.textContent = "No .csv, .xlsx or saved SWC inventory page (.mhtml) found in what was dropped." + pageNote + (pageNote || !seen ? "" : ` Got: ${seen}${list.length > 6 ? "…" : ""}`);
+    return;
+  }
   if (replace) {
     // new exports replace the exports, a new loadout replaces the loadout, new saved pages the saved pages — loading one never throws away the others
     const kinds = new Set(files.map(f => kindOf(f.name)));
@@ -1218,7 +1222,11 @@ function rebuild() {
   buildTabs();
   const has = M.ents.length > 0;
   document.getElementById("empty").hidden = has;
-  if (!has && L) document.getElementById("busy").innerHTML = `<span class="ok">✓ ${esc(L.name)} loaded</span> — now load the inventory exports (or their folder).`;
+  const pg = ok.filter(s => s.kind === "page");
+  const busyNote = document.getElementById("busy").textContent;
+  if (!has && (L || pg.length)) document.getElementById("busy").innerHTML = `<span class="ok">✓ ${[L ? esc(L.name) : "",
+    pg.length ? `${plural(pg.length, "saved page")} (contents of ${plural(pg.reduce((s, p) => s + p.contents.size, 0), "cargo container")})` : ""].filter(Boolean).join(" + ")} loaded</span>
+    — now load the inventory exports (or their folder).${busyNote ? " " + esc(busyNote) : ""}`;
   document.getElementById("app").hidden = !has;
   document.querySelectorAll(".needs-data").forEach(el => el.style.display = has ? "" : "none");
   const per = ET_LIST.filter(et => T[et].R.length).map(et => `${fmt(T[et].R.length)} ${et.toLowerCase()}`);
@@ -2038,7 +2046,14 @@ const overlay = document.getElementById("overlay"); let dragDepth = 0;
 addEventListener("dragenter", e => { if (e.dataTransfer?.types.includes("Files")) { dragDepth++; overlay.classList.add("on"); } });
 addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; overlay.classList.remove("on"); } });
 addEventListener("dragover", e => e.preventDefault());
-addEventListener("drop", async e => { e.preventDefault(); dragDepth = 0; overlay.classList.remove("on"); addFiles(await collectDropped(e.dataTransfer)); });
+addEventListener("drop", async e => {
+  e.preventDefault(); dragDepth = 0; overlay.classList.remove("on");
+  const dt = e.dataTransfer, types = [...(dt.types || [])];
+  const got = await collectDropped(dt);
+  // nothing that is a file: dragged from an app that hands over links or text instead (a chat attachment, a browser download bar…)
+  if (!got.length) { document.getElementById("busy").textContent = `What was dropped had no files in it (only ${types.join(", ") || "nothing"}) — drag the files from File Explorer, or use Load new files / Load folder.`; return; }
+  addFiles(got);
+});
 
 let qt; document.getElementById("q").oninput = e => { clearTimeout(qt); qt = setTimeout(() => { const st = tabState(active); st.query = e.target.value.trim().toLowerCase(); st.page = 0; render(); }, 150); };
 document.getElementById("reset").onclick = () => { const st = tabState(active); st.filters.clear(); st.query = ""; st.inside = null; st.page = 0; render(); };
