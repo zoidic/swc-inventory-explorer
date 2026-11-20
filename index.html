@@ -555,7 +555,8 @@ let sources = [];   // {key, name, path, mtime, size, added, kind: "csv"|"xlsx",
 
 // ---- saved SWC item-inventory pages (Ctrl+S → .mhtml, or .html): the export has no column for what a cargo container holds,
 //      but the page shows "Contains: Droid Parts" for every container. Only uid → contents is kept (a few KB instead of MBs).
-const PAGE_HDR = "#swc-cargo-contents\tuid\tcontents\tunits";
+const BUILD = "2026-11-20 (reads .mhtml pages)";   // shown in Data sources, to tell a cached old copy from the current one
+const PAGE_HDR ="#swc-cargo-contents\tuid\tcontents\tunits";
 function savedPageHtml(text) {
   const b = /^Content-Type:\s*multipart\/related;[\s\S]*?boundary="?([^"\r\n;]+)"?/im.exec(text.slice(0, 4000));
   if (!b) return text;   // a plain .html save
@@ -637,13 +638,15 @@ async function addFiles(list, replace = true) {
   const kindOf = n => /\.xlsx$/i.test(n) ? "xlsx" : /\.(mhtml|mht|html?)$/i.test(n) ? "page" : "csv";
   const busy = document.getElementById("busy");
   // saved pages are read first: an .html that isn't an SWC inventory page (e.g. this tool itself, inside a dropped folder) is skipped quietly
-  const pages = new Map();
+  const pages = new Map(), noPage = [];
   for (const f of [...list].filter(f => kindOf(f.name) === "page")) {
     busy.textContent = `Reading ${f.name}…`;
-    try { const t = cargoFromPage(await f.text()); if (t) pages.set(f, t); } catch {}
+    try { const t = cargoFromPage(await f.text()); if (t) pages.set(f, t); else noPage.push(f.name); }
+    catch (err) { noPage.push(`${f.name} (${err.message})`); }
   }
+  const pageNote = noPage.length ? ` ${plural(noPage.length, "page")} had no cargo containers and ${noPage.length === 1 ? "was" : "were"} skipped: ${noPage.join(", ")}.` : "";
   const files = [...list].filter(f => /\.(csv|xlsx)$/i.test(f.name) && !f.name.startsWith("~$") || pages.has(f));
-  if (!files.length) { busy.textContent = "No .csv, .xlsx or saved SWC inventory page (.mhtml) found in what was dropped."; return; }
+  if (!files.length) { busy.textContent = "No .csv, .xlsx or saved SWC inventory page (.mhtml) found in what was dropped." + pageNote; return; }
   if (replace) {
     // new exports replace the exports, a new loadout replaces the loadout, new saved pages the saved pages — loading one never throws away the others
     const kinds = new Set(files.map(f => kindOf(f.name)));
@@ -670,6 +673,7 @@ async function addFiles(list, replace = true) {
   }
   busy.textContent = skipped ? `${skipped} identical file(s) were skipped.` : "";
   rebuild();
+  if (pageNote) busy.textContent += pageNote;
   if (sources.some(s => s.error) || skipped) document.getElementById("sources").open = true;
   Cloud.changed();
 }
@@ -1227,7 +1231,7 @@ function rebuild() {
 function renderSources() {
   const ok = sources.filter(s => !s.error), csvs = ok.filter(s => s.kind === "csv");
   document.getElementById("srcSummary").textContent = `${plural(csvs.length, "export")} · ${fmt(csvs.reduce((a, s) => a + s.recs.length, 0))} rows → ${fmt(M.ents.length)} unique records`
-    + ` · loadout: ${L ? L.name : "none"}` + (sources.length > ok.length ? ` · ${sources.length - ok.length} rejected` : "");
+    + ` · loadout: ${L ? L.name : "none"}` + (sources.length > ok.length ? ` · ${sources.length - ok.length} rejected` : "") + ` · build ${BUILD}`;
   const date = t => new Date(t).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const newest = {};
   csvs.forEach(s => s.et.split(", ").forEach(et => newest[et] = Math.max(newest[et] || 0, s.mtime)));
